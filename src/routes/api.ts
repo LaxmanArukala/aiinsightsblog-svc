@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import blogRoutes from '../modules/blogs/blog.routes';
 import testimonialRoutes from '../modules/testimonials/testimonial.routes';
+import authorRoutes from '../modules/authors/author.routes';
 
 const api = Router();
 
@@ -21,5 +22,12 @@ api.use('/blogs', blogRoutes);
 // PATCH  /api/v1/testimonials/:id       - Update a testimonial
 // DELETE /api/v1/testimonials/:id       - Delete a testimonial
 api.use('/testimonials', testimonialRoutes);
+
+// ── Authors ───────────────────────────────────────────────────────────────────
+// GET    /api/v1/authors                - List authors (?page=&limit=&search=)
+// GET    /api/v1/authors/:id            - Get author by id
+// PATCH  /api/v1/authors/:id            - Update an author
+// DELETE /api/v1/authors/:id            - Delete an author
+api.use('/authors', authorRoutes);
 
 export default api;

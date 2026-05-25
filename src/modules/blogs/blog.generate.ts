@@ -1,4 +1,4 @@
-import groq from '../../lib/groq';
+import getGroq from '../../lib/groq';
 
 export interface GeneratedBlog {
   title: string;
@@ -30,7 +30,7 @@ Each item must have:
 
 JSON only, no extra text.`;
 
-  const response = await groq.chat.completions.create({
+  const response = await getGroq().chat.completions.create({
     model: 'llama-3.3-70b-versatile',
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
@@ -58,7 +58,7 @@ Return ONLY a valid JSON object with these fields:
 
 JSON only, no extra text.`;
 
-  const response = await groq.chat.completions.create({
+  const response = await getGroq().chat.completions.create({
     model: 'llama-3.3-70b-versatile',
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
