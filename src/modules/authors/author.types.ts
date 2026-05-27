@@ -4,8 +4,19 @@ export interface Author {
   email: string;
   avatar: string | null;
   bio: string | null;
+  education: string | null;
+  specialization: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface CreateAuthorDto {
+  name: string;
+  email: string;
+  avatar?: string;
+  bio?: string;
+  education?: string;
+  specialization?: string;
 }
 
 export interface UpdateAuthorDto {
@@ -13,6 +24,8 @@ export interface UpdateAuthorDto {
   email?: string;
   avatar?: string;
   bio?: string;
+  education?: string;
+  specialization?: string;
 }
 
 export interface AuthorListQuery {

@@ -17,6 +17,24 @@ export async function getAuthors(req: Request, res: Response): Promise<void> {
   }
 }
 
+export async function createAuthor(req: Request, res: Response): Promise<void> {
+  try {
+    const { name, email, avatar, bio, education, specialization } = req.body;
+    if (!name || !email) {
+      res.status(400).json(errorResponse('Validation failed', ['name and email are required']));
+      return;
+    }
+    const author = await authorService.createAuthor({ name, email, avatar, bio, education, specialization });
+    res.status(201).json(successResponse(author, 'Author created successfully'));
+  } catch (err: any) {
+    if (err.code === '23505') {
+      res.status(409).json(errorResponse('Conflict', ['An author with this email already exists']));
+      return;
+    }
+    res.status(500).json(errorResponse('Failed to create author', [err.message]));
+  }
+}
+
 export async function getAuthorById(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;

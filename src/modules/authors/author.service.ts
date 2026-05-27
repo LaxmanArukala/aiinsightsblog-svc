@@ -1,5 +1,5 @@
 import pool from '../../lib/db';
-import { Author, AuthorListQuery, PaginatedAuthors, UpdateAuthorDto } from './author.types';
+import { Author, AuthorListQuery, CreateAuthorDto, PaginatedAuthors, UpdateAuthorDto } from './author.types';
 
 export async function getAuthors(query: AuthorListQuery): Promise<PaginatedAuthors> {
   const page = Math.max(1, query.page || 1);
@@ -32,6 +32,16 @@ export async function getAuthors(query: AuthorListQuery): Promise<PaginatedAutho
     data: dataResult.rows,
     meta: { total, page, limit, total_pages: Math.ceil(total / limit) },
   };
+}
+
+export async function createAuthor(dto: CreateAuthorDto): Promise<Author> {
+  const result = await pool.query<Author>(
+    `INSERT INTO authors (name, email, avatar, bio, education, specialization)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [dto.name, dto.email, dto.avatar ?? null, dto.bio ?? null, dto.education ?? null, dto.specialization ?? null]
+  );
+  return result.rows[0];
 }
 
 export async function getAuthorById(id: string): Promise<Author | null> {

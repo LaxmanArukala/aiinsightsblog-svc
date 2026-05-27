@@ -4,6 +4,7 @@ import * as authorController from './author.controller';
 const router = Router();
 
 router.get('/', authorController.getAuthors);
+router.post('/', authorController.createAuthor);
 router.get('/:id', authorController.getAuthorById);
 router.patch('/:id', authorController.updateAuthor);
 router.delete('/:id', authorController.deleteAuthor);

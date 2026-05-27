@@ -4,12 +4,6 @@ export interface Category {
   slug: string;
 }
 
-export interface Tag {
-  id: string;
-  name: string;
-  slug: string;
-}
-
 export interface Author {
   id: string;
   name: string;
@@ -26,7 +20,7 @@ export interface Blog {
   thumbnail: string | null;
   featured_image: string | null;
   category: Category | null;
-  tags: Tag[];
+  tags: string[];
   author: Author | null;
   published_at: Date;
   read_time: number;
@@ -49,7 +43,7 @@ export interface CreateBlogDto {
   thumbnail?: string;
   featured_image?: string;
   category?: Category;
-  tags?: Tag[];
+  tags?: string[];
   author?: Author;
   published_at?: string;
   read_time?: number;
