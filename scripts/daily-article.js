@@ -1,27 +1,48 @@
 #!/usr/bin/env node
 /**
- * Daily AI article generator.
- * Rotates through categories, checks for duplicates, generates a full article
- * via the local API, and inserts it into the database.
- * Run via cron: 0 9 * * * /home/ec2-user/aiinsightsblog-svc/scripts/daily-article.js >> /home/ec2-user/logs/daily-article.log 2>&1
+ * Daily AI article generator — Groq only
+ *
+ * Runs twice a day (9:00 AM and 9:00 PM).
+ * Each run generates 1 article per category (6 total).
+ * Creates an SVG thumbnail saved to WEB_PUBLIC_DIR/assets/blog-images/.
+ *
+ * Cron (server):
+ *   0  9 * * * node /home/ec2-user/aiinsightsblog-svc/scripts/daily-article.js
+ *   0 21 * * * node /home/ec2-user/aiinsightsblog-svc/scripts/daily-article.js
  */
 
-const http = require('node:http');
+'use strict';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const https  = require('node:https');
+const http   = require('node:http');
+const fs     = require('node:fs');
+const path   = require('node:path');
 
-// ── Categories ───────────────────────────────────────────────────────────────
-const CATEGORIES = [
-  { id: 'cat-1', name: 'AI Agents',             slug: 'ai-agents',       color: '#0ea5e9' },
-  { id: 'cat-2', name: 'Large Language Models',  slug: 'llms',            color: '#10b981' },
-  { id: 'cat-3', name: 'Generative AI',          slug: 'generative-ai',   color: '#f59e0b' },
-  { id: 'cat-4', name: 'Robotics',               slug: 'robotics',        color: '#ef4444' },
-  { id: 'cat-5', name: 'Computer Vision',        slug: 'computer-vision', color: '#8b5cf6' },
-  { id: 'cat-6', name: 'Machine Learning',       slug: 'machine-learning',color: '#ec4899' },
-  { id: 'cat-7', name: 'Data Science',           slug: 'data-science',    color: '#14b8a6' },
-];
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-// ── Topic pools per category ──────────────────────────────────────────────────
+const API_BASE      = 'http://localhost:8000/api/v1';
+const WEB_PUBLIC    = process.env.WEB_PUBLIC_DIR || '/home/ec2-user/aiinsightsblogs-web/public';
+const IMAGES_DIR    = path.join(WEB_PUBLIC, 'assets', 'blog-images');
+
+// ── Provider config ───────────────────────────────────────────────────────────
+const PROVIDER = {
+  provider: 'groq',
+  model:    'llama-3.3-70b-versatile',
+  baseUrl:  'api.groq.com',
+  apiKey:   () => process.env.GROQ_API_KEY,
+};
+
+// ── Categories ────────────────────────────────────────────────────────────────
+const CATEGORIES = {
+  'ai-agents':        { id: 'cat-1', name: 'AI Agents',            slug: 'ai-agents',        color: '#0ea5e9', dark: '#0369a1' },
+  'llms':             { id: 'cat-2', name: "Large Language Models", slug: 'llms',             color: '#10b981', dark: '#047857' },
+  'generative-ai':    { id: 'cat-3', name: 'Generative AI',         slug: 'generative-ai',    color: '#f59e0b', dark: '#b45309' },
+  'robotics':         { id: 'cat-4', name: 'Robotics',              slug: 'robotics',         color: '#ef4444', dark: '#b91c1c' },
+  'machine-learning': { id: 'cat-5', name: 'Machine Learning',      slug: 'machine-learning', color: '#ec4899', dark: '#be185d' },
+  'computer-vision':  { id: 'cat-6', name: 'Computer Vision',       slug: 'computer-vision',  color: '#8b5cf6', dark: '#6d28d9' },
+};
+
+// ── Topic pools ───────────────────────────────────────────────────────────────
 const TOPICS = {
   'ai-agents': [
     'Building Multi-Agent Systems with AutoGen and LangGraph',
@@ -36,14 +57,14 @@ const TOPICS = {
     'CrewAI vs LangGraph: Choosing the Right Multi-Agent Framework',
     'OpenAI Assistants API: Building Stateful AI Agents',
     'Self-Correcting AI Agents: Reflexion and Self-Refine Techniques',
-    'Agent Benchmarking: How to Evaluate Autonomous AI Performance',
     'Tool-Augmented LLMs: Giving AI Agents the Ability to Browse and Compute',
     'Building a Research Agent That Reads and Summarizes Papers',
-    'Function Calling in OpenAI: The Foundation of Agentic AI',
     'Hierarchical AI Agents: Orchestrators and Sub-Agents Explained',
-    'AI Agents for Data Analysis: Automating Insights with Code Interpreter',
-    'Swarm Intelligence: How Multiple AI Agents Collaborate to Solve Problems',
     'Event-Driven AI Agents: Reacting to Real-World Triggers',
+    'Swarm Intelligence: How Multiple AI Agents Collaborate to Solve Problems',
+    'AI Agent Security: Preventing Prompt Injection and Data Leakage',
+    'LangChain Agents Deep Dive: Tools, Memory, and Chains',
+    'Building a Stock Analysis Agent with Real-Time Data',
   ],
   'llms': [
     'Fine-Tuning LLaMA 3 with LoRA: A Step-by-Step Guide',
@@ -54,207 +75,111 @@ const TOPICS = {
     'Understanding Transformer Architecture: Attention Is All You Need',
     'Retrieval-Augmented Generation (RAG): Building Knowledge-Grounded LLMs',
     'Running LLMs Locally with Ollama: Privacy-First AI on Your Machine',
-    'LLM Evaluation Metrics: BLEU, ROUGE, and Beyond',
     'Context Window Limits and How to Work Around Them',
     'Building a Document Q&A System with LangChain and OpenAI',
     'Instruction Tuning vs RLHF: How LLMs Learn to Follow Directions',
-    'Vector Databases for LLMs: Pinecone vs Weaviate vs ChromaDB',
-    'Semantic Search with Sentence Transformers and FAISS',
-    'Guardrails for LLMs: Preventing Hallucinations and Harmful Outputs',
-    'Structured Output with LLMs: JSON Mode and Function Calling',
-    'LLM Benchmarks Explained: MMLU, HellaSwag, and HumanEval',
-    'Building a Chatbot with Memory Using LangChain and Redis',
-    'Speculative Decoding: Making LLM Inference Faster',
-    'LLM Compression: Pruning, Distillation, and Quantization Compared',
+    'KV Cache Optimization: Speeding Up LLM Inference',
+    'Constitutional AI: How Anthropic Trains Claude to Be Helpful and Harmless',
+    'Flash Attention Explained: Making Transformers Fast',
+    'LLM Benchmarking: MMLU, HumanEval, and What They Actually Measure',
+    'Speculative Decoding: Faster LLM Inference Without Quality Loss',
+    'Token Embeddings Explained: How LLMs Represent Language',
+    'Multi-Modal LLMs: How GPT-4V Understands Images and Text Together',
+    'Prompt Caching: Reducing LLM API Costs by 90%',
+    'Building a Code Review Bot with GPT-4 and GitHub Actions',
   ],
   'generative-ai': [
-    'Stable Diffusion XL: A Deep Dive into Text-to-Image Generation',
-    'ControlNet: Giving Precise Control to Diffusion Models',
-    'AI Video Generation: How Sora, Runway, and Pika Work',
-    'Generative AI for Music: MusicLM, Suno, and the Future of Sound',
-    'DALL-E 3 vs Midjourney vs Stable Diffusion: 2025 Comparison',
-    'How Diffusion Models Work: Noise, Denoising, and Latent Space',
-    'AI Image Editing with InstructPix2Pix and Instruct-Based Models',
-    'Multimodal AI: GPT-4V, LLaVA, and Understanding Images with LLMs',
-    'Generative AI in Enterprise: Use Cases Across Industries',
-    'Building a Text-to-Image App with Stable Diffusion API',
-    'LoRA for Image Generation: Training Custom Styles Efficiently',
-    'AI Avatar Generation: How HeyGen and D-ID Create Talking Avatars',
-    'The Ethics of Generative AI: Deepfakes, Copyright, and Consent',
-    'Generative AI for Code: Copilot, Cursor, and the Future of Programming',
-    'Prompt Engineering for Image Generation: Techniques and Best Practices',
-    'Neural Radiance Fields (NeRF): Generating 3D Scenes from Images',
-    'Text-to-3D Generation: Shap-E, DreamFusion, and the Road Ahead',
-    'GAN vs Diffusion Models: Which Architecture Wins in 2025?',
-    'AI in Creative Workflows: How Studios Are Using Generative AI',
-    'Inpainting and Outpainting: Expanding and Editing Images with AI',
+    'Diffusion Models Explained: From DDPM to Stable Diffusion',
+    'How DALL-E 3 Generates Images from Text Descriptions',
+    'ControlNet: Giving Artists Precise Control Over AI Image Generation',
+    'Text-to-Video AI: How Sora and Runway Work Under the Hood',
+    'Voice Cloning with AI: Technology, Ethics, and Applications',
+    'AI Music Generation: How Suno and Udio Create Songs from Prompts',
+    'Generative AI for Code: GitHub Copilot, Cursor, and Claude Code',
+    '3D Object Generation with AI: NeRF and Gaussian Splatting',
+    'GAN vs Diffusion: Why Diffusion Models Won the Image Generation War',
+    'Stable Diffusion Fine-Tuning with DreamBooth and Textual Inversion',
+    'AI Video Editing: Automated Cuts, Color Grading, and Effects',
+    'Synthetic Data Generation: Training AI Without Real-World Data',
+    'ComfyUI Workflow Guide: Building Custom Image Generation Pipelines',
+    'Inpainting and Outpainting: Editing Images with Generative AI',
+    'LoRA for Image Models: Personalizing Stable Diffusion in Minutes',
+    'AI Avatar Creation: Building Realistic Digital Humans',
+    'Text-to-3D: Generating Game Assets with AI',
+    'Generative AI in Fashion: Designing Clothes with Stable Diffusion',
+    'AI Lip Sync and Video Dubbing: How D-ID and HeyGen Work',
+    'Consistency Models: Faster Image Generation in One Step',
   ],
   'robotics': [
-    'ROS 2 Getting Started: Building Your First Robot Application',
-    'Boston Dynamics Atlas: How Humanoid Robots Learn to Move',
-    'Reinforcement Learning for Robot Control: From Simulation to Real World',
-    'SLAM Explained: How Robots Map and Navigate Unknown Environments',
-    'Soft Robotics: Building Flexible Machines Inspired by Nature',
-    'Robot Perception: Fusing LiDAR, Cameras, and IMU for Spatial Awareness',
-    'Imitation Learning: Teaching Robots by Demonstration',
-    'Industrial Robotics in 2025: Cobots, AGVs, and Smart Factories',
-    'Drone Autonomy: Path Planning and Obstacle Avoidance for UAVs',
-    'Tactile Sensing: Giving Robots a Sense of Touch',
-    'Foundation Models for Robotics: RT-2, OpenVLA, and the Road Ahead',
-    'Sim-to-Real Transfer: Bridging the Gap Between Simulation and Physical Robots',
-    'Surgical Robots: How AI Is Transforming the Operating Room',
+    'ROS 2 Getting Started Guide: Building Your First Robot Application',
+    'Boston Dynamics Spot: How the Robot Dog Actually Works',
+    'Reinforcement Learning for Robotics: Teaching Robots to Walk',
+    'Computer Vision in Robotics: How Robots See and Understand the World',
+    'Simultaneous Localization and Mapping (SLAM) Explained',
+    'Humanoid Robots 2025: Tesla Optimus, Figure 01, and the Race for AGI',
+    'Robot Grasping: How AI Teaches Robots to Pick Up Objects',
     'Swarm Robotics: Coordinating Hundreds of Simple Robots',
-    'Legged Robot Locomotion: How Spot and ANYmal Walk on Rough Terrain',
-    'Robot Manipulation: Grasp Planning with Deep Learning',
-    'Autonomous Mobile Robots (AMR) in Warehouses: The Amazon Robotics Story',
-    'Human-Robot Interaction: Designing Safe and Intuitive Collaborative Robots',
-    'Robot Operating System (ROS) vs Isaac SDK: Choosing Your Robotics Framework',
-    'AI-Powered Prosthetics: How Machine Learning Is Restoring Movement',
-  ],
-  'computer-vision': [
-    'YOLO v10 Explained: Real-Time Object Detection at the Edge',
-    'Segment Anything Model (SAM): Meta\'s Universal Image Segmentation Tool',
-    'Depth Estimation with Monocular Cameras: From MiDaS to Depth Anything',
-    'Vision Transformers (ViT) vs CNNs: Which Architecture Should You Use?',
-    'OpenCV in 2025: Essential Techniques Every CV Engineer Should Know',
-    'Pose Estimation with MediaPipe: Body, Hand, and Face Landmarks',
-    'Optical Flow: How Computers Understand Motion in Video',
-    'Face Recognition Systems: FaceNet, ArcFace, and Privacy Considerations',
-    'Semantic Segmentation with DeepLab and SegFormer',
-    'Anomaly Detection in Images: Quality Control with Computer Vision',
-    '3D Point Cloud Processing with PointNet and Open3D',
-    'OCR in 2025: Tesseract, PaddleOCR, and LLM-Based Document Understanding',
-    'Real-Time Video Analytics: Building a Computer Vision Pipeline at Scale',
-    'Medical Image Analysis: AI-Assisted Diagnosis with Deep Learning',
-    'Image Classification with EfficientNet and ConvNeXt',
-    'Self-Supervised Learning for Computer Vision: DINO, MAE, and SimCLR',
-    'Autonomous Driving Perception: Cameras, Radar, and Sensor Fusion',
-    'Scene Understanding: Combining Detection, Segmentation, and Depth',
-    'Edge AI for Computer Vision: Deploying Models on Raspberry Pi and Jetson',
-    'Data Augmentation Strategies for Computer Vision: Albumentations and Beyond',
+    'Drone Navigation Algorithms: Obstacle Avoidance and Path Planning',
+    'Soft Robotics: Building Flexible Machines Inspired by Biology',
+    'Industrial Robots vs Cobots: Which Is Right for Your Factory?',
+    'Robot Operating System (ROS): Architecture and Key Concepts',
+    'Tactile Sensors in Robotics: Giving Machines a Sense of Touch',
+    'Autonomous Vehicles: How Self-Driving Cars Navigate the World',
+    'Inverse Kinematics Explained: Making Robot Arms Move Precisely',
+    'Robot Learning from Human Demonstration: Imitation Learning',
+    'Exoskeletons and Assistive Robotics: Helping Humans Move',
+    'Agricultural Robotics: AI-Powered Farming and Harvesting',
+    'Surgical Robots: Da Vinci and the Future of Robotic Surgery',
+    'Underwater Robots: Exploring the Ocean with Autonomous Vehicles',
   ],
   'machine-learning': [
-    'Gradient Boosting Explained: XGBoost, LightGBM, and CatBoost Compared',
-    'Feature Engineering: The Art of Creating Predictive Variables',
-    'Hyperparameter Tuning with Optuna: Automated ML Optimization',
-    'Dealing with Imbalanced Datasets: SMOTE, Class Weights, and Ensemble Methods',
-    'Explainable AI (XAI): SHAP and LIME for Model Interpretability',
-    'Time Series Forecasting with Prophet, LSTM, and Temporal Fusion Transformer',
-    'Transfer Learning: Fine-Tuning Pre-Trained Models for Your Use Case',
-    'Federated Learning: Training ML Models Without Sharing Data',
-    'MLOps Best Practices: From Experiment Tracking to Production Deployment',
-    'Random Forests and Decision Trees: A Deep Dive for Practitioners',
-    'Anomaly Detection: Isolation Forest, Autoencoders, and One-Class SVM',
-    'Clustering Algorithms Compared: K-Means, DBSCAN, and Hierarchical Clustering',
-    'Building a Recommendation System from Scratch with Collaborative Filtering',
-    'Dimensionality Reduction: PCA, t-SNE, and UMAP Explained',
-    'Neural Architecture Search (NAS): Automating Deep Learning Design',
-    'Online Learning: Updating ML Models in Real Time with Streaming Data',
-    'Bayesian Optimization: A Smarter Way to Tune Machine Learning Models',
-    'Ensemble Methods: Bagging, Boosting, and Stacking for Better Predictions',
-    'Model Monitoring in Production: Detecting Data Drift and Model Decay',
-    'Survival Analysis with Machine Learning: Predicting Time-to-Event Outcomes',
-  ],
-  'data-science': [
-    'Pandas 2.0: What\'s New and How to Use the Latest Features',
-    'Polars vs Pandas: The Fastest DataFrame Library for Large Datasets',
-    'Data Cleaning in Practice: Handling Missing Values, Outliers, and Duplicates',
-    'SQL for Data Scientists: Window Functions, CTEs, and Query Optimization',
-    'Building a Data Pipeline with Apache Airflow and dbt',
-    'Exploratory Data Analysis (EDA): A Systematic Approach with Python',
-    'Statistics for Data Science: Hypothesis Testing, p-values, and Confidence Intervals',
-    'Data Visualization Best Practices: Matplotlib, Seaborn, and Plotly',
-    'Web Scraping at Scale: BeautifulSoup, Scrapy, and Playwright',
-    'A/B Testing for Data Scientists: Design, Analysis, and Pitfalls',
-    'Causal Inference: Moving Beyond Correlation in Data Analysis',
-    'Building a Real-Time Dashboard with Streamlit and FastAPI',
-    'Working with Large Datasets: Dask, Spark, and Vaex for Out-of-Memory Processing',
-    'Data Versioning and Reproducibility with DVC and MLflow',
-    'API Data Collection: REST, GraphQL, and Pagination Strategies',
-    'Natural Language Processing for Data Scientists: Text Cleaning and Feature Extraction',
-    'Geospatial Data Analysis with GeoPandas and Folium',
-    'Time Series Data: Resampling, Rolling Windows, and Seasonal Decomposition',
-    'Data Storytelling: Communicating Insights to Non-Technical Stakeholders',
-    'Building a Personal Data Science Portfolio That Gets You Hired',
-  ],
-};
-
-// ── Authors ───────────────────────────────────────────────────────────────────
-const AUTHORS = [
-  { id: 'a1', name: 'AI Insights Blogs', bio: 'Your go-to source for AI news, tutorials, and insights on agents, LLMs, and generative AI.', avatar: 'https://aiinsightsblogs.com/favicon.ico' },
-];
-
-// ── Unsplash image pools ───────────────────────────────────────────────────────
-const IMAGES = {
-  'ai-agents': [
-    'https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1555255707-c07966088b7b?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1593508512255-86ab42a8e620?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1535378917042-10a22c95931a?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=1200&auto=format&fit=crop&q=80',
-  ],
-  'llms': [
-    'https://images.unsplash.com/photo-1526379095098-d400fd0bf935?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1516110833967-0b5716ca1387?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&auto=format&fit=crop&q=80',
-  ],
-  'generative-ai': [
-    'https://images.unsplash.com/photo-1682686580391-615b1f28e5ee?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1686191128892-3b37add4c844?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1636690619068-eb3849be82d1?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1614680376739-414d95ff43df?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1547036967-23d11aacaee0?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1561736778-92e52a7769ef?w=1200&auto=format&fit=crop&q=80',
-  ],
-  'robotics': [
-    'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1561144257-e32e8efc6c4f?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1546776230-bb86256870ce?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1717501218347-64eb4b34b2e8?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1200&auto=format&fit=crop&q=80',
+    'XGBoost vs LightGBM vs CatBoost: Which Gradient Boosting Framework to Use',
+    'Feature Engineering Techniques That Win Kaggle Competitions',
+    'Bias-Variance Tradeoff Explained Intuitively',
+    'Ensemble Methods: Bagging, Boosting, and Stacking Explained',
+    'Time Series Forecasting with LSTM and Transformer Models',
+    'Anomaly Detection: Identifying Outliers in Production Data',
+    'Federated Learning: Training ML Models Without Centralizing Data',
+    'Hyperparameter Tuning with Optuna and Bayesian Optimization',
+    'MLOps Best Practices: From Experiment to Production',
+    'Interpretable ML: SHAP Values and LIME Explained',
+    'Class Imbalance: Techniques to Handle Skewed Datasets',
+    'Transfer Learning: Reusing Pre-Trained Models for New Tasks',
+    'Online Learning: Updating ML Models in Real Time',
+    'Dimensionality Reduction: PCA, t-SNE, and UMAP Compared',
+    'Graph Neural Networks: Learning on Connected Data',
+    'Causal Inference in ML: Moving Beyond Correlation',
+    'AutoML: Automatically Building Machine Learning Pipelines',
+    'Model Compression: Making ML Models Smaller and Faster',
+    'Semi-Supervised Learning: Getting More from Less Labeled Data',
+    'Survival Analysis: Predicting Time-to-Event with ML',
   ],
   'computer-vision': [
-    'https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1593508512255-86ab42a8e620?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1507146153580-69a1fe6d8aa1?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1535378917042-10a22c95931a?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1555255707-c07966088b7b?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&auto=format&fit=crop&q=80',
-  ],
-  'machine-learning': [
-    'https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1526379095098-d400fd0bf935?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&auto=format&fit=crop&q=80',
-  ],
-  'data-science': [
-    'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1543286386-713bdd548da4?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1516110833967-0b5716ca1387?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1599658880436-c61792e70672?w=1200&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1527474305487-b87b222841cc?w=1200&auto=format&fit=crop&q=80',
+    'YOLO v10 Object Detection: Speed and Accuracy Benchmarks',
+    'Image Segmentation: Semantic, Instance, and Panoptic Compared',
+    'Vision Transformers (ViT): How Attention Replaced CNNs',
+    'SAM (Segment Anything Model): Meta AI\'s Universal Image Segmenter',
+    'Optical Flow Explained: How AI Understands Motion in Video',
+    'Face Recognition: How DeepFace and ArcFace Work',
+    'Medical Image Analysis: AI in Radiology and Pathology',
+    'Depth Estimation from Single Images: Monocular Depth Networks',
+    'Pose Estimation: Detecting Human Body Keypoints with AI',
+    'Image Super-Resolution with AI: ESRGAN and Real-ESRGAN',
+    'Video Understanding: Action Recognition and Temporal Models',
+    'Document AI: OCR, Layout Analysis, and Information Extraction',
+    '3D Point Cloud Processing with PointNet and VoxelNet',
+    'Lane Detection for Autonomous Vehicles: Algorithms and Models',
+    'Thermal Imaging with AI: Applications in Security and Medicine',
+    'Defect Detection in Manufacturing with Computer Vision',
+    'Satellite Image Analysis: AI for Remote Sensing',
+    'Gesture Recognition: Human-Computer Interaction with CV',
+    'Scene Understanding: Teaching Machines to Interpret Images Holistically',
+    'Image Retrieval: Building Visual Search Engines with Deep Learning',
   ],
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+function log(msg) { process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`); }
 
 function slugify(text) {
   return text.toLowerCase().trim()
@@ -263,19 +188,203 @@ function slugify(text) {
     .replace(/-+/g, '-');
 }
 
-function log(msg) {
-  process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`);
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+
+// ── SVG Image Generator ───────────────────────────────────────────────────────
+function wrapText(text, maxChars) {
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    if ((current + ' ' + word).trim().length > maxChars) {
+      if (current) lines.push(current.trim());
+      current = word;
+    } else {
+      current = (current + ' ' + word).trim();
+    }
+  }
+  if (current) lines.push(current.trim());
+  return lines;
 }
 
+function generateSVG(title, category) {
+  const lines    = wrapText(title, 34);
+  const fontSize = lines.length > 2 ? 46 : 52;
+  const lineH    = fontSize * 1.25;
+  const totalH   = lines.length * lineH;
+  const startY   = (630 - totalH) / 2 + fontSize * 0.8;
+
+  const textEls = lines.map((line, i) =>
+    `<text x="600" y="${startY + i * lineH}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="white" filter="url(#shadow)">${line.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')}</text>`
+  ).join('\n  ');
+
+  return `<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f1a"/>
+      <stop offset="100%" style="stop-color:${category.dark}"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.6)"/>
+    </filter>
+    <filter id="badge-shadow">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.4)"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1200" height="630" fill="${category.color}" opacity="0.08"/>
+  <!-- Decorative circles -->
+  <circle cx="1100" cy="80"  r="180" fill="${category.color}" opacity="0.07"/>
+  <circle cx="100"  cy="550" r="140" fill="${category.color}" opacity="0.07"/>
+  <!-- Category badge -->
+  <rect x="56" y="52" rx="24" ry="24" width="${category.name.length * 11 + 40}" height="44" fill="${category.color}" opacity="0.9" filter="url(#badge-shadow)"/>
+  <text x="76" y="81" font-family="Arial, sans-serif" font-size="17" font-weight="600" fill="white">${category.name}</text>
+  <!-- Title -->
+  ${textEls}
+  <!-- Bottom bar -->
+  <rect x="0" y="595" width="1200" height="35" fill="rgba(0,0,0,0.35)"/>
+  <text x="60"   y="618" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)">AI Insights Blogs</text>
+  <text x="1140" y="618" text-anchor="end" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)">aiinsightsblogs.com</text>
+</svg>`;
+}
+
+function saveImage(slug, title, category) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  const fileName = `${slug}.svg`;
+  const filePath = path.join(IMAGES_DIR, fileName);
+  fs.writeFileSync(filePath, generateSVG(title, category), 'utf8');
+  return `/assets/blog-images/${fileName}`;
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// ── AI API caller (OpenAI-compatible) ─────────────────────────────────────────
+function callAIOnce(shift, prompt) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model:       shift.model,
+      messages:    [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens:  8000,
+    });
+
+    const headers = {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${shift.apiKey()}`,
+      'Content-Length': Buffer.byteLength(body),
+    };
+
+    if (shift.provider === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://aiinsightsblogs.com';
+      headers['X-Title']      = 'AI Insights Blog';
+    }
+
+    const req = https.request({
+      hostname: shift.baseUrl,
+      path:     shift.path || '/v1/chat/completions',
+      method:   'POST',
+      headers,
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) return reject(new Error(`${shift.provider} error: ${parsed.error.message || JSON.stringify(parsed.error)}`));
+          const content = parsed.choices?.[0]?.message?.content ?? '';
+          resolve(content);
+        } catch (e) {
+          reject(new Error(`${shift.provider} parse error: ${e.message} — ${data.slice(0, 200)}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function callAI(shift, prompt, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await callAIOnce(shift, prompt);
+    } catch (error_) {
+      const isRateLimit = error_.message.includes('rate') || error_.message.includes('429');
+      if (isRateLimit && i < retries - 1) {
+        log(`Rate limited by ${shift.provider}, retrying in 25s... (attempt ${i + 1}/${retries})`);
+        await sleep(25000);
+      } else {
+        throw error_;
+      }
+    }
+  }
+}
+
+function sanitizeJSON(str) {
+  let inString = false;
+  let escaped  = false;
+  const NL = String.raw`\n`;
+  const CR = String.raw`\r`;
+  const TB = String.raw`\t`;
+  const chars = [];
+  for (const ch of str) {
+    if (escaped) { chars.push(ch); escaped = false; continue; }
+    if (ch === '\\') { chars.push(ch); escaped = true; continue; }
+    if (ch === '"') { inString = !inString; chars.push(ch); continue; }
+    if (inString) {
+      if (ch === '\n') { chars.push(NL); continue; }
+      if (ch === '\r') { chars.push(CR); continue; }
+      if (ch === '\t') { chars.push(TB); continue; }
+    }
+    chars.push(ch);
+  }
+  return chars.join('');
+}
+
+function extractJSON(text) {
+  const sources = [text];
+  const block = text.match(/```(?:json)?\s*([\s\S]*)```/);
+  if (block) sources.push(block[1]);
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1) sources.push(text.slice(start, end + 1));
+
+  for (const raw of sources) {
+    for (const candidate of [raw, sanitizeJSON(raw)]) {
+      try { return JSON.parse(candidate); } catch (error_) { log(`JSON parse attempt failed: ${error_.message}`); }
+    }
+  }
+  throw new Error(`Could not extract JSON from response: ${text.slice(0, 300)}`);
+}
+
+async function generateArticle(shift, topic) {
+  const prompt = `Generate a complete, high-quality, in-depth blog post about: "${topic}".
+
+Return ONLY a valid JSON object with these exact fields:
+- title: An engaging, SEO-friendly blog title (string)
+- slug: URL-friendly slug, lowercase, hyphens only, no special chars (string)
+- excerpt: Compelling 2-3 sentence summary under 300 characters (string)
+- content: Full blog post in Markdown format, minimum 1000 words. Include an intro paragraph, 4-5 sections with ## headings, bullet points, bold text, and a conclusion. Do NOT use HTML tags.
+
+Rules: Return raw JSON only. No code fences. No markdown wrapper. All string values must use escaped quotes and newlines.`;
+
+  const raw = await callAI(shift, prompt);
+  const parsed = extractJSON(raw);
+
+  if (!parsed.title || !parsed.slug || !parsed.content || !parsed.excerpt) {
+    throw new Error(`Incomplete article from ${shift.provider}: ${JSON.stringify(Object.keys(parsed))}`);
+  }
+  return parsed;
+}
+
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
 function httpGet(url) {
   return new Promise((resolve, reject) => {
     http.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch (err) { reject(new Error(`JSON parse error: ${err.message} — ${data.slice(0, 300)}`)); }
-      });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch (e) { reject(e); } });
     }).on('error', reject);
   });
 }
@@ -283,20 +392,17 @@ function httpGet(url) {
 function httpPost(url, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const urlObj = new URL(url);
+    const urlObj  = new URL(url);
     const req = http.request({
-      method: 'POST',
+      method:   'POST',
       hostname: urlObj.hostname,
-      port: urlObj.port,
-      path: urlObj.pathname,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      port:     urlObj.port,
+      path:     urlObj.pathname,
+      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch (err) { reject(new Error(`JSON parse error: ${err.message} — ${data.slice(0, 300)}`)); }
-      });
+      res.on('end', () => { try { resolve({ status: res.statusCode, body: JSON.parse(data) }); } catch (e) { reject(e); } });
     });
     req.on('error', reject);
     req.write(payload);
@@ -304,12 +410,11 @@ function httpPost(url, body) {
   });
 }
 
-// Fetch all existing blog titles from the DB (paginated)
 async function fetchExistingTitles() {
   const titles = new Set();
   let page = 1;
   while (true) {
-    const res = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
+    const res  = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
     blogs.forEach(b => titles.add(b.title.toLowerCase().trim()));
@@ -321,101 +426,103 @@ async function fetchExistingTitles() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  log('=== Daily article generation started ===');
+  log(`=== Article generation started (${PROVIDER.provider} / ${PROVIDER.model}) ===`);
 
-  // ── Step 1: fetch existing titles to avoid duplicates ──────────────────────
-  log('Fetching existing article titles from database...');
+  if (!PROVIDER.apiKey()) {
+    log(`ERROR: GROQ_API_KEY is not set`);
+    process.exit(1);
+  }
+
   const existingTitles = await fetchExistingTitles();
-  log(`Found ${existingTitles.size} existing articles.`);
+  log(`Existing articles: ${existingTitles.size}`);
 
-  // ── Step 2: pick category (rotate by day of year) ─────────────────────────
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-  const category = CATEGORIES[dayOfYear % CATEGORIES.length];
-  log(`Category: ${category.name}`);
+  let published = 0;
 
-  // ── Step 3: pick an unused topic ─────────────────────────────────────────
-  const topicPool = TOPICS[category.slug];
-  const unusedTopics = topicPool.filter(t => !existingTitles.has(t.toLowerCase().trim()));
-
-  if (unusedTopics.length === 0) {
-    log(`⚠ All topics in "${category.name}" already published. Trying other categories...`);
-    // Try other categories
-    for (const cat of CATEGORIES) {
-      if (cat.slug === category.slug) continue;
-      const fallback = TOPICS[cat.slug].filter(t => !existingTitles.has(t.toLowerCase().trim()));
-      if (fallback.length > 0) {
-        log(`Switching to category: ${cat.name}`);
-        Object.assign(category, cat);
-        unusedTopics.push(...fallback);
-        break;
-      }
-    }
+  for (const catSlug of Object.keys(CATEGORIES)) {
+    const result = await publishArticleForCategory(catSlug, existingTitles, published);
+    if (result) { existingTitles.add(result); published++; }
   }
 
-  if (unusedTopics.length === 0) {
-    log('✓ All predefined topics have been published. No new article needed today.');
-    return;
+  log(`\n=== Done — ${published} article(s) published ===`);
+}
+
+// Returns the published title (lowercased) on success, null on failure
+async function publishArticleForCategory(catSlug, existingTitles, publishedSoFar) {
+  const category = CATEGORIES[catSlug];
+  log(`\n── Category: ${category.name} ──`);
+
+  const unused = TOPICS[catSlug].filter(t => !existingTitles.has(t.toLowerCase().trim()));
+  if (unused.length === 0) {
+    log(`⚠ All topics exhausted for ${category.name}, skipping.`);
+    return null;
   }
 
-  const topic = pick(unusedTopics);
-  log(`Topic selected: "${topic}"`);
+  // Respect Groq TPM limit (6000 tokens/min → ~35s between articles)
+  if (publishedSoFar > 0) await sleep(35000);
 
-  // ── Step 4: generate article content ────────────────────────────────────
-  log('Calling AI generation API...');
-  const genRes = await httpGet(`${API_BASE}/blogs/generate?topic=${encodeURIComponent(topic)}`);
+  const topic = pick(unused);
+  log(`Topic: "${topic}"`);
 
-  if (!genRes.data?.title) {
-    throw new Error(`Generation failed: ${JSON.stringify(genRes)}`);
+  let article;
+  try {
+    article = await generateArticle(PROVIDER, topic);
+    log(`Generated: "${article.title}"`);
+  } catch (err) {
+    log(`ERROR generating article: ${err.message}`);
+    return null;
   }
 
-  const generated = genRes.data;
-  log(`Generated title: "${generated.title}"`);
-
-  // Double-check the AI-generated title isn't a duplicate either
-  if (existingTitles.has(generated.title.toLowerCase().trim())) {
-    throw new Error(`Duplicate detected for AI-generated title: "${generated.title}". Aborting.`);
+  if (existingTitles.has(article.title.toLowerCase().trim())) {
+    log(`Duplicate title detected, skipping.`);
+    return null;
   }
 
-  // ── Step 5: build and save the blog payload ───────────────────────────────
-  const author = pick(AUTHORS);
-  const image  = pick(IMAGES[category.slug]);
-  const thumb  = image.replace('w=1200', 'w=800');
-  const words  = generated.content.split(/\s+/).length;
+  // Strip any images the AI included in the content
+  article.content = article.content
+    .replaceAll(/!\[.*?\]\(.*?\)/g, '')
+    .replaceAll(/<img[^>]*>/gi, '');
+
+  const slug = `${slugify(article.title)}-${Date.now()}`;
+  let imageUrl = '';
+  try {
+    imageUrl = saveImage(slug, article.title, category);
+    log(`Image saved: ${imageUrl}`);
+  } catch (err) {
+    log(`Warning: image save failed (${err.message}), continuing without image.`);
+  }
+
+  const words    = article.content.replace(/<[^>]+>/g, ' ').split(/\s+/).length;
   const readTime = Math.max(3, Math.round(words / 200));
 
-  const blogPayload = {
-    title:          generated.title,
-    slug:           `${slugify(generated.title)}-${Date.now()}`,
-    excerpt:        generated.excerpt,
-    content:        generated.content,
-    thumbnail:      thumb,
-    featured_image: image,
+  const payload = {
+    title:          article.title,
+    slug,
+    excerpt:        article.excerpt,
+    content:        article.content,
+    thumbnail:      imageUrl,
+    featured_image: imageUrl,
     category:       { id: category.id, name: category.name, slug: category.slug, color: category.color },
-    tags:           [category.name, 'Artificial Intelligence', 'Machine Learning', 'AI Tutorial']
-                      .map((t, i) => ({ id: `tag-${i}`, name: t, slug: slugify(t) })),
-    author,
+    tags:           [category.name, 'Artificial Intelligence', 'AI Tutorial'],
     published_at:   new Date().toISOString(),
     read_time:      readTime,
     featured:       false,
     trending:       false,
-    rating:         Number.parseFloat((4 + Math.random()).toFixed(1)),
+    rating:         0,
     review_count:   0,
   };
 
-  log('Saving article to database...');
-  const saveRes = await httpPost(`${API_BASE}/blogs`, blogPayload);
-
-  if (saveRes.status !== 201) {
-    throw new Error(`Save failed (HTTP ${saveRes.status}): ${JSON.stringify(saveRes.body)}`);
+  try {
+    const res = await httpPost(`${API_BASE}/blogs`, payload);
+    if (res.status !== 201) {
+      log(`Save failed (HTTP ${res.status}): ${JSON.stringify(res.body)}`);
+      return null;
+    }
+    log(`✓ Published! ID: ${res.body.data?.id} | Read time: ${readTime} min`);
+    return article.title.toLowerCase().trim();
+  } catch (err) {
+    log(`ERROR saving article: ${err.message}`);
+    return null;
   }
-
-  const saved = saveRes.body.data;
-  log(`✓ Article published!`);
-  log(`  ID       : ${saved.id}`);
-  log(`  Title    : ${saved.title}`);
-  log(`  Category : ${category.name}`);
-  log(`  Read time: ${readTime} min`);
-  log('=== Done ===');
 }
 
 main().catch(err => {
