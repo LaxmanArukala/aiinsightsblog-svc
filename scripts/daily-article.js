@@ -210,14 +210,15 @@ function wrapText(text, maxChars) {
 }
 
 function generateSVG(title, category) {
-  const lines    = wrapText(title, 34);
-  const fontSize = lines.length > 2 ? 46 : 52;
-  const lineH    = fontSize * 1.25;
+  const lines    = wrapText(title, 32);
+  const fontSize = lines.length > 3 ? 42 : lines.length > 2 ? 48 : 54;
+  const lineH    = fontSize * 1.3;
   const totalH   = lines.length * lineH;
   const startY   = (630 - totalH) / 2 + fontSize * 0.8;
 
+  const safe    = s => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   const textEls = lines.map((line, i) =>
-    `<text x="600" y="${startY + i * lineH}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="white" filter="url(#shadow)">${line.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')}</text>`
+    `<text x="600" y="${startY + i * lineH}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="white" filter="url(#shadow)">${safe(line)}</text>`
   ).join('\n  ');
 
   return `<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
@@ -226,27 +227,24 @@ function generateSVG(title, category) {
       <stop offset="0%" style="stop-color:#0f0f1a"/>
       <stop offset="100%" style="stop-color:${category.dark}"/>
     </linearGradient>
+    <linearGradient id="fade" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:${category.color};stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:${category.color};stop-opacity:0.03"/>
+    </linearGradient>
     <filter id="shadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.6)"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.7)"/>
     </filter>
     <filter id="badge-shadow">
       <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.4)"/>
     </filter>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
-  <rect x="0" y="0" width="1200" height="630" fill="${category.color}" opacity="0.08"/>
-  <!-- Decorative circles -->
-  <circle cx="1100" cy="80"  r="180" fill="${category.color}" opacity="0.07"/>
-  <circle cx="100"  cy="550" r="140" fill="${category.color}" opacity="0.07"/>
-  <!-- Category badge -->
+  <rect width="1200" height="630" fill="url(#fade)"/>
+  <circle cx="1050" cy="100" r="220" fill="${category.color}" opacity="0.06"/>
+  <circle cx="150"  cy="530" r="160" fill="${category.color}" opacity="0.06"/>
   <rect x="56" y="52" rx="24" ry="24" width="${category.name.length * 11 + 40}" height="44" fill="${category.color}" opacity="0.9" filter="url(#badge-shadow)"/>
-  <text x="76" y="81" font-family="Arial, sans-serif" font-size="17" font-weight="600" fill="white">${category.name}</text>
-  <!-- Title -->
+  <text x="76" y="81" font-family="Arial, sans-serif" font-size="17" font-weight="600" fill="white">${safe(category.name)}</text>
   ${textEls}
-  <!-- Bottom bar -->
-  <rect x="0" y="595" width="1200" height="35" fill="rgba(0,0,0,0.35)"/>
-  <text x="60"   y="618" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)">AI Insights Blogs</text>
-  <text x="1140" y="618" text-anchor="end" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)">aiinsightsblogs.com</text>
 </svg>`;
 }
 
@@ -322,25 +320,17 @@ async function callAI(shift, prompt, retries = 3) {
   }
 }
 
+const ESCAPE_MAP = { '\n': String.raw`\n`, '\r': String.raw`\r`, '\t': String.raw`\t` };
+
 function sanitizeJSON(str) {
   let inString = false;
   let escaped  = false;
-  const NL = String.raw`\n`;
-  const CR = String.raw`\r`;
-  const TB = String.raw`\t`;
-  const chars = [];
-  for (const ch of str) {
-    if (escaped) { chars.push(ch); escaped = false; continue; }
-    if (ch === '\\') { chars.push(ch); escaped = true; continue; }
-    if (ch === '"') { inString = !inString; chars.push(ch); continue; }
-    if (inString) {
-      if (ch === '\n') { chars.push(NL); continue; }
-      if (ch === '\r') { chars.push(CR); continue; }
-      if (ch === '\t') { chars.push(TB); continue; }
-    }
-    chars.push(ch);
-  }
-  return chars.join('');
+  return [...str].map(ch => {
+    if (escaped)    { escaped = false; return ch; }
+    if (ch === '\\') { escaped = true; return ch; }
+    if (ch === '"') { inString = !inString; return ch; }
+    return (inString && ESCAPE_MAP[ch]) ? ESCAPE_MAP[ch] : ch;
+  }).join('');
 }
 
 function extractJSON(text) {
@@ -366,9 +356,9 @@ Return ONLY a valid JSON object with these exact fields:
 - title: An engaging, SEO-friendly blog title (string)
 - slug: URL-friendly slug, lowercase, hyphens only, no special chars (string)
 - excerpt: Compelling 2-3 sentence summary under 300 characters (string)
-- content: Full blog post in Markdown format, minimum 1000 words. Include an intro paragraph, 4-5 sections with ## headings, bullet points, bold text, and a conclusion. Do NOT use HTML tags.
+- content: Full blog post in HTML format, minimum 1000 words. Use <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote>, <code>, <pre> tags. Include intro, 4-5 detailed sections with subheadings, and a conclusion. Do NOT include <html>, <head>, <body>, or <img> tags.
 
-Rules: Return raw JSON only. No code fences. No markdown wrapper. All string values must use escaped quotes and newlines.`;
+Rules: Return raw JSON only. No code fences. No markdown wrapper.`;
 
   const raw = await callAI(shift, prompt);
   const parsed = extractJSON(raw);
