@@ -29,6 +29,7 @@ const PROVIDER = {
   provider: 'groq',
   model:    'llama-3.3-70b-versatile',
   baseUrl:  'api.groq.com',
+  path:     '/openai/v1/chat/completions',
   apiKey:   () => process.env.GROQ_API_KEY,
 };
 
