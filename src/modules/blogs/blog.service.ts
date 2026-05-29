@@ -34,6 +34,11 @@ export async function getBlogs(query: BlogListQuery): Promise<PaginatedResponse<
     conditions.push(`category->>'slug' = $${params.length}`);
   }
 
+  if (query.category_name) {
+    params.push(query.category_name);
+    conditions.push(`category->>'name' ILIKE $${params.length}`);
+  }
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countResult = await pool.query(`SELECT COUNT(*) FROM blogs ${where}`, params);

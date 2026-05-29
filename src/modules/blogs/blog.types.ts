@@ -62,6 +62,7 @@ export interface BlogListQuery {
   sort?: 'latest' | 'oldest' | 'most_liked' | 'most_viewed' | 'top_rated' | 'trending';
   featured?: boolean;
   category?: string;
+  category_name?: string;
 }
 
 export interface PaginatedResponse<T> {

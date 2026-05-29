@@ -12,7 +12,8 @@ export async function getBlogs(req: Request, res: Response): Promise<void> {
       search: req.query.search as string | undefined,
       sort: req.query.sort as BlogListQuery['sort'],
       featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined,
-      category: req.query.category as string | undefined,
+      category: (req.query.category_slug ?? req.query.category) as string | undefined,
+      category_name: req.query.category_name as string | undefined,
     };
     const result = await blogService.getBlogs(query);
     res.json(successResponse(result, 'Blogs fetched successfully'));

@@ -241,7 +241,9 @@ function wrapText(text, maxChars) {
 
 function generateSVG(title, category) {
   const lines    = wrapText(title, 32);
-  const fontSize = lines.length > 3 ? 42 : lines.length > 2 ? 48 : 54;
+  let fontSize = 54;
+  if (lines.length > 3)      fontSize = 42;
+  else if (lines.length > 2) fontSize = 48;
   const lineH    = fontSize * 1.3;
   const totalH   = lines.length * lineH;
   const startY   = (630 - totalH) / 2 + fontSize * 0.8;
@@ -264,16 +266,11 @@ function generateSVG(title, category) {
     <filter id="shadow">
       <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.7)"/>
     </filter>
-    <filter id="badge-shadow">
-      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.4)"/>
-    </filter>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <rect width="1200" height="630" fill="url(#fade)"/>
   <circle cx="1050" cy="100" r="220" fill="${category.color}" opacity="0.06"/>
   <circle cx="150"  cy="530" r="160" fill="${category.color}" opacity="0.06"/>
-  <rect x="56" y="52" rx="24" ry="24" width="${category.name.length * 11 + 40}" height="44" fill="${category.color}" opacity="0.9" filter="url(#badge-shadow)"/>
-  <text x="76" y="81" font-family="Arial, sans-serif" font-size="17" font-weight="600" fill="white">${safe(category.name)}</text>
   ${textEls}
 </svg>`;
 }
@@ -339,10 +336,10 @@ async function callAI(shift, prompt, retries = 3) {
     try {
       return await callAIOnce(shift, prompt);
     } catch (error_) {
-      const isRateLimit = error_.message.includes('rate') || error_.message.includes('429');
+      const isRateLimit = error_.message.toLowerCase().includes('rate limit') || error_.message.includes('429');
       if (isRateLimit && i < retries - 1) {
-        log(`Rate limited by ${shift.provider}, retrying in 25s... (attempt ${i + 1}/${retries})`);
-        await sleep(25000);
+        log(`Rate limited by ${shift.provider}, retrying in 35s... (attempt ${i + 1}/${retries})`);
+        await sleep(35000);
       } else {
         throw error_;
       }
@@ -463,8 +460,10 @@ async function main() {
 
   let published = 0;
 
-  for (const catSlug of Object.keys(CATEGORIES)) {
-    const result = await publishArticleForCategory(catSlug, existingTitles, published);
+  const catSlugs = Object.keys(CATEGORIES);
+  for (let i = 0; i < catSlugs.length; i++) {
+    if (i > 0) { log('Waiting 40s for Groq TPM limit...'); await sleep(40000); }
+    const result = await publishArticleForCategory(catSlugs[i], existingTitles);
     if (result) { existingTitles.add(result); published++; }
   }
 
@@ -472,7 +471,7 @@ async function main() {
 }
 
 // Returns the published title (lowercased) on success, null on failure
-async function publishArticleForCategory(catSlug, existingTitles, publishedSoFar) {
+async function publishArticleForCategory(catSlug, existingTitles) {
   const category = CATEGORIES[catSlug];
   log(`\n── Category: ${category.name} ──`);
 
@@ -481,9 +480,6 @@ async function publishArticleForCategory(catSlug, existingTitles, publishedSoFar
     log(`⚠ All topics exhausted for ${category.name}, skipping.`);
     return null;
   }
-
-  // Respect Groq TPM limit (6000 tokens/min → ~35s between articles)
-  if (publishedSoFar > 0) await sleep(35000);
 
   const topic = pick(unused);
   log(`Topic: "${topic}"`);
