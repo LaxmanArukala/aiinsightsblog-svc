@@ -35,12 +35,42 @@ const PROVIDER = {
 
 // ── Categories ────────────────────────────────────────────────────────────────
 const CATEGORIES = {
-  'ai-agents':        { id: 'cat-1', name: 'AI Agents',            slug: 'ai-agents',        color: '#0ea5e9', dark: '#0369a1' },
-  'llms':             { id: 'cat-2', name: "Large Language Models", slug: 'llms',             color: '#10b981', dark: '#047857' },
-  'generative-ai':    { id: 'cat-3', name: 'Generative AI',         slug: 'generative-ai',    color: '#f59e0b', dark: '#b45309' },
-  'robotics':         { id: 'cat-4', name: 'Robotics',              slug: 'robotics',         color: '#ef4444', dark: '#b91c1c' },
-  'machine-learning': { id: 'cat-5', name: 'Machine Learning',      slug: 'machine-learning', color: '#ec4899', dark: '#be185d' },
-  'computer-vision':  { id: 'cat-6', name: 'Computer Vision',       slug: 'computer-vision',  color: '#8b5cf6', dark: '#6d28d9' },
+  'ai-agents': {
+    id: 'cat-1', name: 'AI Agents', slug: 'ai-agents', color: '#0ea5e9', dark: '#0369a1',
+    baseTags: ['AI Agents', 'Autonomous Agents', 'LLM Agents', 'Multi-Agent Systems', 'Agentic AI',
+      'LangChain', 'LangGraph', 'AutoGen', 'CrewAI', 'Tool Calling', 'ReAct Pattern',
+      'Artificial Intelligence', 'AI Automation', 'AI Tutorial', 'AI 2025'],
+  },
+  'llms': {
+    id: 'cat-2', name: 'Large Language Models', slug: 'llms', color: '#10b981', dark: '#047857',
+    baseTags: ['Large Language Models', 'LLM', 'GPT', 'LLaMA', 'Mistral', 'Claude', 'Gemini',
+      'Prompt Engineering', 'Fine-Tuning', 'RAG', 'Retrieval Augmented Generation',
+      'Transformer', 'NLP', 'Natural Language Processing', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
+  'generative-ai': {
+    id: 'cat-3', name: 'Generative AI', slug: 'generative-ai', color: '#f59e0b', dark: '#b45309',
+    baseTags: ['Generative AI', 'AI Image Generation', 'Stable Diffusion', 'Diffusion Models',
+      'DALL-E', 'Midjourney', 'Text to Image', 'Text to Video', 'AI Art',
+      'GANs', 'Foundation Models', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
+  'robotics': {
+    id: 'cat-4', name: 'Robotics', slug: 'robotics', color: '#ef4444', dark: '#b91c1c',
+    baseTags: ['Robotics', 'AI Robotics', 'Robot Learning', 'ROS', 'ROS2', 'Autonomous Robots',
+      'Reinforcement Learning', 'Robot Navigation', 'SLAM', 'Humanoid Robots',
+      'Industrial Automation', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
+  'machine-learning': {
+    id: 'cat-5', name: 'Machine Learning', slug: 'machine-learning', color: '#ec4899', dark: '#be185d',
+    baseTags: ['Machine Learning', 'Deep Learning', 'Neural Networks', 'Python', 'Scikit-learn',
+      'TensorFlow', 'PyTorch', 'Data Science', 'Supervised Learning', 'Unsupervised Learning',
+      'MLOps', 'Model Training', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
+  'computer-vision': {
+    id: 'cat-6', name: 'Computer Vision', slug: 'computer-vision', color: '#8b5cf6', dark: '#6d28d9',
+    baseTags: ['Computer Vision', 'Image Recognition', 'Object Detection', 'YOLO', 'CNN',
+      'Convolutional Neural Networks', 'Image Segmentation', 'OpenCV', 'Vision Transformers',
+      'Deep Learning', 'Image Processing', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
 };
 
 // ── Topic pools ───────────────────────────────────────────────────────────────
@@ -356,6 +386,7 @@ Return ONLY a valid JSON object with these exact fields:
 - title: An engaging, SEO-friendly blog title (string)
 - slug: URL-friendly slug, lowercase, hyphens only, no special chars (string)
 - excerpt: Compelling 2-3 sentence summary under 300 characters (string)
+- tags: Array of 10-15 SEO-friendly tags (strings). Include: main topic keywords, related technologies, use cases, difficulty level (beginner/intermediate/advanced), and broad AI/ML terms. Example: ["machine learning", "neural networks", "deep learning", "python", "tutorial", "beginner guide", "tensorflow", "artificial intelligence", "data science", "model training"]
 - content: Full blog post in HTML format, minimum 1000 words. Use <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote>, <code>, <pre> tags. Include intro, 4-5 detailed sections with subheadings, and a conclusion. Do NOT include <html>, <head>, <body>, or <img> tags.
 
 Rules: Return raw JSON only. No code fences. No markdown wrapper.`;
@@ -365,6 +396,9 @@ Rules: Return raw JSON only. No code fences. No markdown wrapper.`;
 
   if (!parsed.title || !parsed.slug || !parsed.content || !parsed.excerpt) {
     throw new Error(`Incomplete article from ${shift.provider}: ${JSON.stringify(Object.keys(parsed))}`);
+  }
+  if (!Array.isArray(parsed.tags) || parsed.tags.length === 0) {
+    parsed.tags = [];
   }
   return parsed;
 }
@@ -493,7 +527,7 @@ async function publishArticleForCategory(catSlug, existingTitles, publishedSoFar
     thumbnail:      imageUrl,
     featured_image: imageUrl,
     category:       { id: category.id, name: category.name, slug: category.slug, color: category.color },
-    tags:           [category.name, 'Artificial Intelligence', 'AI Tutorial'],
+    tags:           [...new Set([...category.baseTags, ...article.tags])],
     published_at:   new Date().toISOString(),
     read_time:      readTime,
     featured:       false,
