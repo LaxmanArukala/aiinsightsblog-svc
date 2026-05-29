@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
- * Daily AI article generator — Groq only
+ * Daily AI article generator — Groq (AM) + Gemini (PM)
  *
- * Runs twice a day (9:00 AM and 9:00 PM).
- * Each run generates 1 article per category (6 total).
- * Creates an SVG thumbnail saved to WEB_PUBLIC_DIR/assets/blog-images/.
+ * Shift schedule (UTC):
+ *   00:00, 04:00, 08:00  → Groq   (llama-3.3-70b-versatile)
+ *   12:00, 16:00, 20:00  → Gemini (gemini-2.0-flash)
  *
  * Cron (server):
- *   0  9 * * * node /home/ec2-user/aiinsightsblog-svc/scripts/daily-article.js
- *   0 21 * * * node /home/ec2-user/aiinsightsblog-svc/scripts/daily-article.js
+ *   every-4-hours cron: 0 [STAR]/4 [STAR] [STAR] [STAR] node .../daily-article.js >> .../daily-article.log 2>&1
  */
 
 'use strict';
@@ -26,12 +25,16 @@ const IMAGES_DIR    = path.join(WEB_PUBLIC, 'assets', 'blog-images');
 
 // ── Provider config ───────────────────────────────────────────────────────────
 const PROVIDER = {
-  provider: 'groq',
-  model:    'llama-3.3-70b-versatile',
-  baseUrl:  'api.groq.com',
-  path:     '/openai/v1/chat/completions',
-  apiKey:   () => process.env.GROQ_API_KEY,
+  provider:  'groq',
+  model:     'llama-3.3-70b-versatile',
+  baseUrl:   'api.groq.com',
+  path:      '/openai/v1/chat/completions',
+  apiKey:    () => process.env.GROQ_API_KEY,
+  delayMs:   40000,
+  maxTokens: 8000,
 };
+
+function getProvider() { return PROVIDER; }
 
 // ── Categories ────────────────────────────────────────────────────────────────
 const CATEGORIES = {
@@ -292,19 +295,14 @@ function callAIOnce(shift, prompt) {
       model:       shift.model,
       messages:    [{ role: 'user', content: prompt }],
       temperature: 0.7,
-      max_tokens:  8000,
+      max_tokens:  shift.maxTokens,
     });
 
     const headers = {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${shift.apiKey()}`,
+      'Content-Type':   'application/json',
+      'Authorization':  `Bearer ${shift.apiKey()}`,
       'Content-Length': Buffer.byteLength(body),
     };
-
-    if (shift.provider === 'openrouter') {
-      headers['HTTP-Referer'] = 'https://aiinsightsblogs.com';
-      headers['X-Title']      = 'AI Insights Blog';
-    }
 
     const req = https.request({
       hostname: shift.baseUrl,
@@ -316,9 +314,12 @@ function callAIOnce(shift, prompt) {
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
-          const parsed = JSON.parse(data);
+          const raw    = JSON.parse(data);
+          // Gemini wraps error responses in an array
+          const parsed = Array.isArray(raw) ? raw[0] : raw;
           if (parsed.error) return reject(new Error(`${shift.provider} error: ${parsed.error.message || JSON.stringify(parsed.error)}`));
           const content = parsed.choices?.[0]?.message?.content ?? '';
+          if (!content) return reject(new Error(`${shift.provider} returned empty content — ${data.slice(0, 300)}`));
           resolve(content);
         } catch (e) {
           reject(new Error(`${shift.provider} parse error: ${e.message} — ${data.slice(0, 200)}`));
@@ -383,7 +384,7 @@ Return ONLY a valid JSON object with these exact fields:
 - title: An engaging, SEO-friendly blog title (string)
 - slug: URL-friendly slug, lowercase, hyphens only, no special chars (string)
 - excerpt: Compelling 2-3 sentence summary under 300 characters (string)
-- tags: Array of 10-15 SEO-friendly tags (strings). Include: main topic keywords, related technologies, use cases, difficulty level (beginner/intermediate/advanced), and broad AI/ML terms. Example: ["machine learning", "neural networks", "deep learning", "python", "tutorial", "beginner guide", "tensorflow", "artificial intelligence", "data science", "model training"]
+- tags: Array of 10-15 SEO-friendly tags (strings). Include: main topic keywords, related technologies, use cases, difficulty level (beginner/intermediate/advanced), and broad AI/ML terms.
 - content: Full blog post in HTML format, minimum 1000 words. Use <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote>, <code>, <pre> tags. Include intro, 4-5 detailed sections with subheadings, and a conclusion. Do NOT include <html>, <head>, <body>, or <img> tags.
 
 Rules: Return raw JSON only. No code fences. No markdown wrapper.`;
@@ -448,10 +449,11 @@ async function fetchExistingTitles() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  log(`=== Article generation started (${PROVIDER.provider} / ${PROVIDER.model}) ===`);
+  const provider = getProvider();
+  log(`=== Article generation started (${provider.provider} / ${provider.model}) ===`);
 
-  if (!PROVIDER.apiKey()) {
-    log(`ERROR: GROQ_API_KEY is not set`);
+  if (!provider.apiKey()) {
+    log(`ERROR: ${provider.provider === 'groq' ? 'GROQ_API_KEY' : 'GEMINI_API_KEY'} is not set`);
     process.exit(1);
   }
 
@@ -462,8 +464,11 @@ async function main() {
 
   const catSlugs = Object.keys(CATEGORIES);
   for (let i = 0; i < catSlugs.length; i++) {
-    if (i > 0) { log('Waiting 40s for Groq TPM limit...'); await sleep(40000); }
-    const result = await publishArticleForCategory(catSlugs[i], existingTitles);
+    if (i > 0) {
+      log(`Waiting ${provider.delayMs / 1000}s for ${provider.provider} rate limit...`);
+      await sleep(provider.delayMs);
+    }
+    const result = await publishArticleForCategory(catSlugs[i], existingTitles, provider);
     if (result) { existingTitles.add(result); published++; }
   }
 
@@ -471,7 +476,7 @@ async function main() {
 }
 
 // Returns the published title (lowercased) on success, null on failure
-async function publishArticleForCategory(catSlug, existingTitles) {
+async function publishArticleForCategory(catSlug, existingTitles, provider) {
   const category = CATEGORIES[catSlug];
   log(`\n── Category: ${category.name} ──`);
 
@@ -486,7 +491,7 @@ async function publishArticleForCategory(catSlug, existingTitles) {
 
   let article;
   try {
-    article = await generateArticle(PROVIDER, topic);
+    article = await generateArticle(provider, topic);
     log(`Generated: "${article.title}"`);
   } catch (err) {
     log(`ERROR generating article: ${err.message}`);
