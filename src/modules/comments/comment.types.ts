@@ -1,8 +1,11 @@
+export type CommentStatus = 'pending' | 'approved' | 'rejected';
+
 export interface Comment {
   comment_id:   string;
   blog_id:      string;
   name:         string;
   comment_text: string;
+  status:       CommentStatus;
   created_at:   Date;
   updated_at:   Date;
 }
@@ -15,9 +18,11 @@ export interface CreateCommentDto {
 export interface UpdateCommentDto {
   name?:         string;
   comment_text?: string;
+  status?:       CommentStatus;
 }
 
 export interface CommentQueryParams {
-  page?:  number;
-  limit?: number;
+  page?:   number;
+  limit?:  number;
+  status?: CommentStatus;
 }

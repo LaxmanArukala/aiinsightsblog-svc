@@ -15,6 +15,9 @@ export async function getReviewsByBlogId(
   if (params.rating) {
     conditions.push(`rating = $${values.push(params.rating)}`);
   }
+  if (params.status) {
+    conditions.push(`status = $${values.push(params.status)}`);
+  }
 
   const where = conditions.join(' AND ');
 
@@ -42,8 +45,8 @@ export async function getReviewById(reviewId: string, blogId: string): Promise<R
 
 export async function createReview(blogId: string, dto: CreateReviewDto): Promise<Review> {
   const result = await pool.query<Review>(
-    `INSERT INTO reviews (blog_id, name, email, rating, review_text)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO reviews (blog_id, name, email, rating, review_text, status)
+     VALUES ($1, $2, $3, $4, $5, 'pending')
      RETURNING *`,
     [blogId, dto.name, dto.email, dto.rating, dto.review_text],
   );
@@ -62,6 +65,7 @@ export async function updateReview(
   if (dto.email       !== undefined) fields.push(`email = $${values.push(dto.email)}`);
   if (dto.rating      !== undefined) fields.push(`rating = $${values.push(dto.rating)}`);
   if (dto.review_text !== undefined) fields.push(`review_text = $${values.push(dto.review_text)}`);
+  if (dto.status      !== undefined) fields.push(`status = $${values.push(dto.status)}`);
 
   if (fields.length === 0) return getReviewById(reviewId, blogId);
 

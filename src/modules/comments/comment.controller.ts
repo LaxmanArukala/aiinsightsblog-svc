@@ -1,14 +1,17 @@
 import type { Request, Response } from 'express';
 import { errorResponse, successResponse } from '../../lib/response';
 import * as commentService from './comment.service';
-import type { CommentQueryParams, CreateCommentDto, UpdateCommentDto } from './comment.types';
+import type { CommentQueryParams, CommentStatus, CreateCommentDto, UpdateCommentDto } from './comment.types';
+
+const VALID_STATUSES = new Set<CommentStatus>(['pending', 'approved', 'rejected']);
 
 export async function getComments(req: Request, res: Response): Promise<void> {
   try {
     const { blogId } = req.params;
     const params: CommentQueryParams = {
-      page:  req.query.page  ? Number.parseInt(req.query.page as string, 10)  : 1,
-      limit: req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 10,
+      page:   req.query.page   ? Number.parseInt(req.query.page as string, 10)  : 1,
+      limit:  req.query.limit  ? Number.parseInt(req.query.limit as string, 10) : 10,
+      status: req.query.status as CommentStatus | undefined,
     };
     const { data, total } = await commentService.getCommentsByBlogId(blogId, params);
     res.json(successResponse({ data, total, page: params.page, limit: params.limit }, 'Comments fetched'));
@@ -52,6 +55,11 @@ export async function updateComment(req: Request, res: Response): Promise<void> 
   try {
     const { blogId, commentId } = req.params;
     const dto = req.body as UpdateCommentDto;
+
+    if (dto.status !== undefined && !VALID_STATUSES.has(dto.status)) {
+      res.status(400).json(errorResponse('status must be pending, approved, or rejected'));
+      return;
+    }
 
     const comment = await commentService.updateComment(commentId, blogId, dto);
     if (!comment) { res.status(404).json(errorResponse('Comment not found')); return; }

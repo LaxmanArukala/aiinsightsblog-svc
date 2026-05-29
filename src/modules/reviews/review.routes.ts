@@ -7,7 +7,7 @@ const router = Router({ mergeParams: true });
 router.get('/',            reviewController.getReviews);
 router.post('/',           reviewController.createReview);
 router.get('/:reviewId',   reviewController.getReviewById);
-router.put('/:reviewId',   reviewController.updateReview);
+router.patch('/:reviewId', reviewController.updateReview);
 router.delete('/:reviewId',reviewController.deleteReview);
 
 export default router;

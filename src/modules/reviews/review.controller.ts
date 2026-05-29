@@ -1,7 +1,9 @@
 import type { Request, Response } from 'express';
 import { errorResponse, successResponse } from '../../lib/response';
 import * as reviewService from './review.service';
-import type { CreateReviewDto, ReviewQueryParams, UpdateReviewDto } from './review.types';
+import type { CreateReviewDto, ReviewQueryParams, ReviewStatus, UpdateReviewDto } from './review.types';
+
+const VALID_STATUSES = new Set<ReviewStatus>(['pending', 'approved', 'rejected']);
 
 export async function getReviews(req: Request, res: Response): Promise<void> {
   try {
@@ -10,6 +12,7 @@ export async function getReviews(req: Request, res: Response): Promise<void> {
       page:   req.query.page   ? Number.parseInt(req.query.page as string, 10)   : 1,
       limit:  req.query.limit  ? Number.parseInt(req.query.limit as string, 10)  : 10,
       rating: req.query.rating ? Number.parseInt(req.query.rating as string, 10) : undefined,
+      status: req.query.status as ReviewStatus | undefined,
     };
     const { data, total } = await reviewService.getReviewsByBlogId(blogId, params);
     res.json(successResponse({ data, total, page: params.page, limit: params.limit }, 'Reviews fetched'));
@@ -26,6 +29,7 @@ export async function getReviewById(req: Request, res: Response): Promise<void> 
     if (!review) { res.status(404).json(errorResponse('Review not found')); return; }
     res.json(successResponse(review, 'Review fetched'));
   } catch (err) {
+    console.error(err);
     res.status(500).json(errorResponse('Failed to fetch review'));
   }
 }
@@ -47,6 +51,7 @@ export async function createReview(req: Request, res: Response): Promise<void> {
     const review = await reviewService.createReview(blogId, dto);
     res.status(201).json(successResponse(review, 'Review created'));
   } catch (err) {
+    console.error(err);
     res.status(500).json(errorResponse('Failed to create review'));
   }
 }
@@ -60,11 +65,16 @@ export async function updateReview(req: Request, res: Response): Promise<void> {
       res.status(400).json(errorResponse('rating must be between 1 and 5'));
       return;
     }
+    if (dto.status !== undefined && !VALID_STATUSES.has(dto.status)) {
+      res.status(400).json(errorResponse('status must be pending, approved, or rejected'));
+      return;
+    }
 
     const review = await reviewService.updateReview(reviewId, blogId, dto);
     if (!review) { res.status(404).json(errorResponse('Review not found')); return; }
     res.json(successResponse(review, 'Review updated'));
   } catch (err) {
+    console.error(err);
     res.status(500).json(errorResponse('Failed to update review'));
   }
 }
@@ -76,6 +86,7 @@ export async function deleteReview(req: Request, res: Response): Promise<void> {
     if (!deleted) { res.status(404).json(errorResponse('Review not found')); return; }
     res.json(successResponse(null, 'Review deleted'));
   } catch (err) {
+    console.error(err);
     res.status(500).json(errorResponse('Failed to delete review'));
   }
 }
