@@ -447,16 +447,32 @@ async function fetchExistingTitles() {
   return titles;
 }
 
+// Fetch real UUIDs from the categories API and patch CATEGORIES in place
+async function syncCategoryIds() {
+  try {
+    const res = await httpGet(`${API_BASE}/categories?limit=50`);
+    const rows = res.data?.data ?? [];
+    for (const row of rows) {
+      const match = Object.values(CATEGORIES).find(c => c.slug === row.slug);
+      if (match) { match.id = row.id; }
+    }
+    log(`Category IDs synced from DB (${rows.length} found)`);
+  } catch (err) {
+    log(`Warning: could not sync category IDs (${err.message}), using fallback IDs`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const provider = getProvider();
   log(`=== Article generation started (${provider.provider} / ${provider.model}) ===`);
 
   if (!provider.apiKey()) {
-    log(`ERROR: ${provider.provider === 'groq' ? 'GROQ_API_KEY' : 'GEMINI_API_KEY'} is not set`);
+    log(`ERROR: GROQ_API_KEY is not set`);
     process.exit(1);
   }
 
+  await syncCategoryIds();
   const existingTitles = await fetchExistingTitles();
   log(`Existing articles: ${existingTitles.size}`);
 
