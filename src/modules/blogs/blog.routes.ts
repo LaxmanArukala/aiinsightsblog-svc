@@ -10,7 +10,7 @@ router.get('/ai-list', blogController.generateBlogListHandler);
 router.get('/', blogController.getBlogs);
 router.get('/:id', blogController.getBlogById);
 router.post('/', blogController.createBlog);
-router.put('/:id', blogController.upsertBlog);
+router.patch('/:id', blogController.upsertBlog);
 router.delete('/:id', blogController.deleteBlog);
 
 // Nested: /api/v1/blogs/:blogId/reviews
