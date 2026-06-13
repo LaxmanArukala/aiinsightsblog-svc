@@ -289,11 +289,11 @@ function saveImage(slug, title, category) {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ── AI API caller (OpenAI-compatible) ─────────────────────────────────────────
-function callAIOnce(shift, prompt) {
+function callAIOnce(shift, messages) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model:       shift.model,
-      messages:    [{ role: 'user', content: prompt }],
+      messages,
       temperature: 0.7,
       max_tokens:  shift.maxTokens,
     });
@@ -332,10 +332,10 @@ function callAIOnce(shift, prompt) {
   });
 }
 
-async function callAI(shift, prompt, retries = 3) {
+async function callAI(shift, messages, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
-      return await callAIOnce(shift, prompt);
+      return await callAIOnce(shift, messages);
     } catch (error_) {
       const isRateLimit = error_.message.toLowerCase().includes('rate limit') || error_.message.includes('429');
       if (isRateLimit && i < retries - 1) {
@@ -377,19 +377,51 @@ function extractJSON(text) {
   throw new Error(`Could not extract JSON from response: ${text.slice(0, 300)}`);
 }
 
+const SEO_SYSTEM_PROMPT = `You are an expert SEO content writer specialising in "AI tools for job seekers" for professionals and job seekers.
+
+CONTENT REQUIREMENTS:
+- Tone: Informative and helpful
+- Minimum word count: 1800 words in the content field (excluding meta fields)
+- Keyword density: approximately 1.5% (do not exceed 2% to avoid keyword stuffing)
+- Format the content field as valid HTML using these tags only: <h1>, <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote>, <code>, <pre>. Never use Markdown inside the content field.
+
+MANDATORY SEO STRUCTURE RULES — follow ALL of these:
+- Use exactly ONE <h1> tag containing the exact primary keyword (the article topic).
+- Add an <h2> subheading every 200–300 words. <h2>s must use keyword variants or LSI keywords, not the exact primary keyword repeated.
+- Mention the primary keyword naturally within the FIRST 100 words of the article body.
+- End the article with a <h2>Frequently Asked Questions</h2> section. Include 3–5 questions as <h3> tags with <p> answers. Questions must mirror real search queries. Answers must be 2–4 sentences each, concise enough for featured snippets.
+
+KEYWORD RULES:
+- Naturally weave in 5–8 LSI (Latent Semantic Indexing) keywords and semantic variants.
+- Include 2–3 long-tail keyword phrases (4+ words) as <h2> headings or in body text.
+- Wrap the primary keyword in <strong> exactly once on its first prominent appearance in the body. Do not over-bold.
+
+E-E-A-T & AUTHORITY SIGNALS:
+- Cite 1–2 high-authority external sources (e.g. Forbes, official tool websites) inline in the article.
+- Reference real use cases or verifiable facts to demonstrate experience and expertise.
+- Include a brief author expertise note in a <p> at the very end of the content.
+
+OUTPUT: Return raw JSON only. No code fences. No markdown wrapper. No explanation.`;
+
 async function generateArticle(shift, topic) {
-  const prompt = `Generate a complete, high-quality, in-depth blog post about: "${topic}".
+  const userPrompt = `Write a complete, publish-ready article about: "${topic}".
 
 Return ONLY a valid JSON object with these exact fields:
-- title: An engaging, SEO-friendly blog title (string)
-- slug: URL-friendly slug, lowercase, hyphens only, no special chars (string)
-- excerpt: Compelling 2-3 sentence summary under 300 characters (string)
-- tags: Array of 10-15 SEO-friendly tags (strings). Include: main topic keywords, related technologies, use cases, difficulty level (beginner/intermediate/advanced), and broad AI/ML terms.
-- content: Full blog post in HTML format, minimum 1000 words. Use <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote>, <code>, <pre> tags. Include intro, 4-5 detailed sections with subheadings, and a conclusion. Do NOT include <html>, <head>, <body>, or <img> tags.
+- "title": SEO-friendly blog title that contains the primary keyword (string)
+- "slug": URL-friendly slug, lowercase, hyphens only, no special chars (string)
+- "excerpt": Meta description — exactly 150–160 characters, includes the primary keyword once, a clear value proposition, and a soft CTA such as "Learn more" or "Discover" (string)
+- "meta_title": Meta title 50–60 characters, primary keyword near the start, includes a power word like Best/Top/Free/Ultimate, format: [Primary keyword] | [Benefit] (string)
+- "tags": Array of 10–15 SEO-friendly tag strings covering main topic keywords, related technologies, use cases, difficulty level, and broad AI/ML terms
+- "content": Full article in HTML (minimum 1800 words). Must use <h1> for the article title, <h2> for major sections every 200–300 words, <h3> for subsections, <p> for paragraphs, <ul>/<li> for lists, <strong> exactly once for the primary keyword, <em> for emphasis. End with an <h2>Frequently Asked Questions</h2> section containing 3–5 <h3> questions with <p> answers. Do NOT include <html>, <head>, <body>, or <img> tags.
 
-Rules: Return raw JSON only. No code fences. No markdown wrapper.`;
+Return raw JSON only. No code fences.`;
 
-  const raw = await callAI(shift, prompt);
+  const messages = [
+    { role: 'system', content: SEO_SYSTEM_PROMPT },
+    { role: 'user',   content: userPrompt },
+  ];
+
+  const raw    = await callAI(shift, messages);
   const parsed = extractJSON(raw);
 
   if (!parsed.title || !parsed.slug || !parsed.content || !parsed.excerpt) {
