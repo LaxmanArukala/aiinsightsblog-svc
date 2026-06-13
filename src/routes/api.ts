@@ -5,6 +5,8 @@ import authorRoutes from '../modules/authors/author.routes';
 import contactRoutes from '../modules/contacts/contact.routes';
 import subscriberRoutes from '../modules/subscribers/subscriber.routes';
 import categoryRoutes from '../modules/categories/category.routes';
+import authRoutes from '../modules/auth/auth.routes';
+import dashboardRoutes from '../modules/dashboard/dashboard.routes';
 
 const api = Router();
 
@@ -55,5 +57,15 @@ api.use('/subscribers', subscriberRoutes);
 // PUT    /api/v1/categories/:id           - Update a category
 // DELETE /api/v1/categories/:id           - Delete a category
 api.use('/categories', categoryRoutes);
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+// GET    /api/v1/dashboard               - Counts: blogs, authors, testimonials, reviews, comments, contacts, subscribers
+api.use('/dashboard', dashboardRoutes);
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+// POST   /api/v1/auth/login               - Login (email + password → tokens)
+// POST   /api/v1/auth/refresh             - Refresh tokens
+// POST   /api/v1/auth/logout              - Logout (revoke refresh token)
+api.use('/auth', authRoutes);
 
 export default api;
