@@ -11,7 +11,7 @@ export async function getBlogs(req: Request, res: Response): Promise<void> {
       limit: req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 10,
       search: req.query.search as string | undefined,
       sort: req.query.sort as BlogListQuery['sort'],
-      featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined,
+      featured: req.query.featured === undefined ? undefined : req.query.featured === 'true',
       category: (req.query.category_slug ?? req.query.category) as string | undefined,
       category_name: req.query.category_name as string | undefined,
     };
@@ -84,6 +84,21 @@ export async function deleteBlog(req: Request, res: Response): Promise<void> {
     res.status(200).json(successResponse(null, 'Blog deleted successfully'));
   } catch (err) {
     res.status(500).json(errorResponse('Failed to delete blog', [(err as Error).message]));
+  }
+}
+
+export async function getRelatedBlogs(req: Request, res: Response): Promise<void> {
+  try {
+    const categoryId = req.query.category_id as string;
+    if (!categoryId) {
+      res.status(400).json(errorResponse('Validation failed', ['category_id query param is required']));
+      return;
+    }
+    const limit = req.query.limit ? Math.min(20, Number.parseInt(req.query.limit as string, 10)) : 4;
+    const blogs = await blogService.getRelatedBlogs(categoryId, limit);
+    res.json(successResponse(blogs, 'Related blogs fetched successfully'));
+  } catch (err) {
+    res.status(500).json(errorResponse('Failed to fetch related blogs', [(err as Error).message]));
   }
 }
 

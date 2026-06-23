@@ -24,17 +24,31 @@ const WEB_PUBLIC    = process.env.WEB_PUBLIC_DIR || '/home/ec2-user/aiinsightsbl
 const IMAGES_DIR    = path.join(WEB_PUBLIC, 'assets', 'blog-images');
 
 // ── Provider config ───────────────────────────────────────────────────────────
-const PROVIDER = {
-  provider:  'groq',
-  model:     'llama-3.3-70b-versatile',
-  baseUrl:   'api.groq.com',
-  path:      '/openai/v1/chat/completions',
-  apiKey:    () => process.env.GROQ_API_KEY,
-  delayMs:   40000,
-  maxTokens: 8000,
+const PROVIDERS = {
+  groq: {
+    provider:  'groq',
+    model:     'llama-3.3-70b-versatile',
+    baseUrl:   'api.groq.com',
+    path:      '/openai/v1/chat/completions',
+    apiKey:    () => process.env.GROQ_API_KEY,
+    delayMs:   40000,
+    maxTokens: 8000,
+  },
+  gemini: {
+    provider:  'gemini',
+    model:     'gemini-2.0-flash',
+    baseUrl:   'generativelanguage.googleapis.com',
+    path:      '/v1beta/openai/chat/completions',
+    apiKey:    () => process.env.GEMINI_API_KEY,
+    delayMs:   15000,
+    maxTokens: 8192,
+  },
 };
 
-function getProvider() { return PROVIDER; }
+// AM (UTC 00:00, 04:00, 08:00) → Groq  |  PM (UTC 12:00, 16:00, 20:00) → Gemini
+function getProvider() {
+  return new Date().getUTCHours() < 12 ? PROVIDERS.groq : PROVIDERS.gemini;
+}
 
 // ── Categories ────────────────────────────────────────────────────────────────
 const CATEGORIES = {
@@ -499,8 +513,9 @@ async function main() {
   const provider = getProvider();
   log(`=== Article generation started (${provider.provider} / ${provider.model}) ===`);
 
+  const keyName = provider.provider === 'gemini' ? 'GEMINI_API_KEY' : 'GROQ_API_KEY';
   if (!provider.apiKey()) {
-    log(`ERROR: GROQ_API_KEY is not set`);
+    log(`ERROR: ${keyName} is not set`);
     process.exit(1);
   }
 

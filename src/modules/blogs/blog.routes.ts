@@ -7,6 +7,7 @@ const router = Router();
 
 router.get('/generate', blogController.generateBlogHandler);
 router.get('/ai-list', blogController.generateBlogListHandler);
+router.get('/related', blogController.getRelatedBlogs);
 router.get('/', blogController.getBlogs);
 router.get('/:id', blogController.getBlogById);
 router.post('/', blogController.createBlog);

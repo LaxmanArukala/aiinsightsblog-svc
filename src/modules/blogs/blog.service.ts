@@ -59,6 +59,17 @@ export async function getBlogs(query: BlogListQuery): Promise<PaginatedResponse<
   };
 }
 
+export async function getRelatedBlogs(categoryId: string, limit: number): Promise<Blog[]> {
+  const result = await pool.query<Blog>(
+    `SELECT * FROM blogs
+     WHERE category->>'id' = $1
+     ORDER BY published_at DESC
+     LIMIT $2`,
+    [categoryId, limit]
+  );
+  return result.rows;
+}
+
 export async function getBlogById(id: string): Promise<Blog | null> {
   const result = await pool.query<Blog>('SELECT * FROM blogs WHERE id = $1', [id]);
   return result.rows[0] ?? null;
