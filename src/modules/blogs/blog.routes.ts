@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as blogController from './blog.controller';
 import reviewRoutes from '../reviews/review.routes';
 import commentRoutes from '../comments/comment.routes';
+import analyticsRoutes from '../analytics/analytics.routes';
 
 const router = Router();
 
@@ -19,5 +20,8 @@ router.use('/:blogId/reviews', reviewRoutes);
 
 // Nested: /api/v1/blogs/:blogId/comments
 router.use('/:blogId/comments', commentRoutes);
+
+// Nested: /api/v1/blogs/:blogId/(views|likes|bookmarks|shares)
+router.use('/:blogId', analyticsRoutes);
 
 export default router;
