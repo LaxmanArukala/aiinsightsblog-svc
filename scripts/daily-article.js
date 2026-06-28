@@ -608,13 +608,6 @@ async function publishArticleForCategory(catSlug, existingTitles, provider) {
     .replaceAll(/<img[^>]*>/gi, '');
 
   const slug = `${slugify(article.title)}-${Date.now()}`;
-  let imageUrl = '';
-  try {
-    imageUrl = saveImage(slug, article.title, category);
-    log(`Image saved: ${imageUrl}`);
-  } catch (err) {
-    log(`Warning: image save failed (${err.message}), continuing without image.`);
-  }
 
   const words    = article.content.replace(/<[^>]+>/g, ' ').split(/\s+/).length;
   const readTime = Math.max(3, Math.round(words / 200));
@@ -624,8 +617,8 @@ async function publishArticleForCategory(catSlug, existingTitles, provider) {
     slug,
     excerpt:        article.excerpt,
     content:        article.content,
-    thumbnail:      imageUrl,
-    featured_image: imageUrl,
+    thumbnail:      null,
+    featured_image: null,
     category:       { id: category.id, name: category.name, slug: category.slug, color: category.color },
     tags:           [...new Set([...category.baseTags, ...article.tags])],
     published_at:   new Date().toISOString(),
