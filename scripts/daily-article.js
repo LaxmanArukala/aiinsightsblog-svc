@@ -88,6 +88,12 @@ const CATEGORIES = {
       'Convolutional Neural Networks', 'Image Segmentation', 'OpenCV', 'Vision Transformers',
       'Deep Learning', 'Image Processing', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
   },
+  'ai-prompts': {
+    id: '10798631-7cb3-42e8-b54d-62f100cd05b8', name: 'AI Prompts', slug: 'ai-prompts', color: '#f97316', dark: '#c2410c',
+    baseTags: ['AI Prompts', 'Prompt Engineering', 'ChatGPT Prompts', 'Ready-to-Use Prompts',
+      'Prompt Templates', 'LLM Prompts', 'AI Writing Prompts', 'Productivity Prompts',
+      'Prompt Hacks', 'AI Tools', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
 };
 
 // ── Topic pools ───────────────────────────────────────────────────────────────
@@ -223,6 +229,28 @@ const TOPICS = {
     'Gesture Recognition: Human-Computer Interaction with CV',
     'Scene Understanding: Teaching Machines to Interpret Images Holistically',
     'Image Retrieval: Building Visual Search Engines with Deep Learning',
+  ],
+  'ai-prompts': [
+    '50 Best ChatGPT Prompts for Job Seekers to Land Their Dream Job',
+    'Top ChatGPT Prompts for Writing a Professional Resume That Stands Out',
+    'The Ultimate List of AI Prompts for Cover Letter Writing',
+    'Best AI Prompts for LinkedIn Profile Optimization in 2025',
+    '30 Ready-to-Use ChatGPT Prompts for Interview Preparation',
+    'AI Prompts for Salary Negotiation: Scripts That Get Results',
+    'Top Midjourney Prompts for Creating Professional Profile Photos',
+    'ChatGPT Prompts for Career Change: How to Pivot Industries with AI',
+    'Best AI Prompts for Freelancers to Win More Clients',
+    '20 ChatGPT Prompts for Writing Cold Emails That Actually Get Replies',
+    'AI Prompts for Business Plan Writing: From Idea to Full Plan',
+    'Top Prompts for Using Claude to Summarize Research Papers Instantly',
+    'ChatGPT Prompts for Learning Any New Skill 10x Faster',
+    'Best AI Prompts for Content Creators to Overcome Writer\'s Block',
+    '25 Powerful ChatGPT Prompts for Entrepreneurs and Startups',
+    'AI Prompts for Data Analysis: Let ChatGPT Interpret Your Data',
+    'Top ChatGPT Prompts for Coding: Debug, Refactor, and Build Faster',
+    'Best AI Prompts for Social Media Marketing in 2025',
+    'ChatGPT Prompts for Personal Branding: Build Your Online Presence',
+    '30 AI Prompts for Productivity: Automate Your Daily Work with ChatGPT',
   ],
 };
 
@@ -525,7 +553,10 @@ async function main() {
 
   let published = 0;
 
-  const catSlugs = Object.keys(CATEGORIES);
+  // Restricted to ai-prompts until 2026-07-05 — resume all categories after that date
+  const now = new Date();
+  const restrictUntil = new Date('2026-07-05T00:00:00Z');
+  const catSlugs = now < restrictUntil ? ['ai-prompts'] : Object.keys(CATEGORIES);
   for (let i = 0; i < catSlugs.length; i++) {
     if (i > 0) {
       log(`Waiting ${provider.delayMs / 1000}s for ${provider.provider} rate limit...`);
