@@ -617,7 +617,7 @@ async function publishArticleForCategory(catSlug, existingTitles, provider) {
     slug,
     excerpt:        article.excerpt,
     content:        article.content,
-    thumbnail:      null,
+    thumbnail:      '/assets/blog-images/default-thumbnail.png',
     featured_image: null,
     category:       { id: category.id, name: category.name, slug: category.slug, color: category.color },
     tags:           [...new Set([...category.baseTags, ...article.tags])],
