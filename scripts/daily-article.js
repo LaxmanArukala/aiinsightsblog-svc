@@ -608,6 +608,13 @@ async function publishArticleForCategory(catSlug, existingTitles, provider) {
     .replaceAll(/<img[^>]*>/gi, '');
 
   const slug = `${slugify(article.title)}-${Date.now()}`;
+  let imageUrl = '/assets/blog-images/default-thumbnail.png';
+  try {
+    imageUrl = saveImage(slug, article.title, category);
+    log(`Image saved: ${imageUrl}`);
+  } catch (err) {
+    log(`Warning: image save failed (${err.message}), falling back to default thumbnail.`);
+  }
 
   const words    = article.content.replace(/<[^>]+>/g, ' ').split(/\s+/).length;
   const readTime = Math.max(3, Math.round(words / 200));
@@ -617,8 +624,8 @@ async function publishArticleForCategory(catSlug, existingTitles, provider) {
     slug,
     excerpt:        article.excerpt,
     content:        article.content,
-    thumbnail:      '/assets/blog-images/default-thumbnail.png',
-    featured_image: null,
+    thumbnail:      imageUrl,
+    featured_image: imageUrl,
     category:       { id: category.id, name: category.name, slug: category.slug, color: category.color },
     tags:           [...new Set([...category.baseTags, ...article.tags])],
     published_at:   new Date().toISOString(),
