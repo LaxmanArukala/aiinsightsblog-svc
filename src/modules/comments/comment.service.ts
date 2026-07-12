@@ -32,6 +32,36 @@ export async function getCommentsByBlogId(
   return { data: rows.rows, total: Number.parseInt(count.rows[0].count, 10) };
 }
 
+export async function getAllComments(
+  params: CommentQueryParams,
+): Promise<{ data: Comment[]; total: number }> {
+  const page   = Math.max(1, params.page  ?? 1);
+  const limit  = Math.min(100, Math.max(1, params.limit ?? 10));
+  const offset = (page - 1) * limit;
+
+  const conditions: string[] = [];
+  const values: unknown[]    = [];
+
+  if (params.status) {
+    conditions.push(`status = $${values.push(params.status)}`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const [rows, count] = await Promise.all([
+    pool.query<Comment>(
+      `SELECT * FROM comments ${where} ORDER BY created_at DESC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
+      values,
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*) FROM comments ${where}`,
+      values.slice(0, -2),
+    ),
+  ]);
+
+  return { data: rows.rows, total: Number.parseInt(count.rows[0].count, 10) };
+}
+
 export async function getCommentById(commentId: string, blogId: string): Promise<Comment | null> {
   const result = await pool.query<Comment>(
     'SELECT * FROM comments WHERE comment_id = $1 AND blog_id = $2',

@@ -21,6 +21,21 @@ export async function getComments(req: Request, res: Response): Promise<void> {
   }
 }
 
+export async function getAllComments(req: Request, res: Response): Promise<void> {
+  try {
+    const params: CommentQueryParams = {
+      page:   req.query.page   ? Number.parseInt(req.query.page as string, 10)  : 1,
+      limit:  req.query.limit  ? Number.parseInt(req.query.limit as string, 10) : 10,
+      status: req.query.status as CommentStatus | undefined,
+    };
+    const { data, total } = await commentService.getAllComments(params);
+    res.json(successResponse({ data, total, page: params.page, limit: params.limit }, 'Comments fetched'));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json(errorResponse('Failed to fetch comments'));
+  }
+}
+
 export async function getCommentById(req: Request, res: Response): Promise<void> {
   try {
     const { blogId, commentId } = req.params;

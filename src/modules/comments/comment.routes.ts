@@ -11,3 +11,7 @@ router.patch('/:commentId',  commentController.updateComment);
 router.delete('/:commentId', commentController.deleteComment);
 
 export default router;
+
+// Mounted at /api/v1/comments - full list across all blogs
+export const allCommentsRouter = Router();
+allCommentsRouter.get('/', commentController.getAllComments);

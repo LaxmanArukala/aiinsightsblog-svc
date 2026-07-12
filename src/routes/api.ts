@@ -7,6 +7,8 @@ import subscriberRoutes from '../modules/subscribers/subscriber.routes';
 import categoryRoutes from '../modules/categories/category.routes';
 import authRoutes from '../modules/auth/auth.routes';
 import dashboardRoutes from '../modules/dashboard/dashboard.routes';
+import { allCommentsRouter } from '../modules/comments/comment.routes';
+import { allReviewsRouter } from '../modules/reviews/review.routes';
 
 const api = Router();
 
@@ -19,6 +21,14 @@ const api = Router();
 // PUT    /api/v1/blogs/:id              - Update a blog by id
 // DELETE /api/v1/blogs/:id              - Delete a blog by id
 api.use('/blogs', blogRoutes);
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+// GET    /api/v1/comments               - List all comments across all blogs (?page=&limit=&status=)
+api.use('/comments', allCommentsRouter);
+
+// ── Reviews ───────────────────────────────────────────────────────────────────
+// GET    /api/v1/reviews                - List all reviews across all blogs (?page=&limit=&rating=&status=)
+api.use('/reviews', allReviewsRouter);
 
 // ── Testimonials ──────────────────────────────────────────────────────────────
 // GET    /api/v1/testimonials           - List testimonials (?page=&limit=&rating=)

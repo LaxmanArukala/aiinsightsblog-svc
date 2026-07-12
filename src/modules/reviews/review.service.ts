@@ -35,6 +35,39 @@ export async function getReviewsByBlogId(
   return { data: rows.rows, total: Number.parseInt(count.rows[0].count, 10) };
 }
 
+export async function getAllReviews(
+  params: ReviewQueryParams,
+): Promise<{ data: Review[]; total: number }> {
+  const page  = Math.max(1, params.page  ?? 1);
+  const limit = Math.min(100, Math.max(1, params.limit ?? 10));
+  const offset = (page - 1) * limit;
+
+  const conditions: string[] = [];
+  const values: unknown[]    = [];
+
+  if (params.rating) {
+    conditions.push(`rating = $${values.push(params.rating)}`);
+  }
+  if (params.status) {
+    conditions.push(`status = $${values.push(params.status)}`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const [rows, count] = await Promise.all([
+    pool.query<Review>(
+      `SELECT * FROM reviews ${where} ORDER BY created_at DESC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
+      values,
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*) FROM reviews ${where}`,
+      values.slice(0, values.length - 2),
+    ),
+  ]);
+
+  return { data: rows.rows, total: Number.parseInt(count.rows[0].count, 10) };
+}
+
 export async function getReviewById(reviewId: string, blogId: string): Promise<Review | null> {
   const result = await pool.query<Review>(
     'SELECT * FROM reviews WHERE review_id = $1 AND blog_id = $2',

@@ -11,3 +11,7 @@ router.patch('/:reviewId', reviewController.updateReview);
 router.delete('/:reviewId',reviewController.deleteReview);
 
 export default router;
+
+// Mounted at /api/v1/reviews - full list across all blogs
+export const allReviewsRouter = Router();
+allReviewsRouter.get('/', reviewController.getAllReviews);

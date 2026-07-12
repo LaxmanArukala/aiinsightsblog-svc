@@ -22,6 +22,22 @@ export async function getReviews(req: Request, res: Response): Promise<void> {
   }
 }
 
+export async function getAllReviews(req: Request, res: Response): Promise<void> {
+  try {
+    const params: ReviewQueryParams = {
+      page:   req.query.page   ? Number.parseInt(req.query.page as string, 10)   : 1,
+      limit:  req.query.limit  ? Number.parseInt(req.query.limit as string, 10)  : 10,
+      rating: req.query.rating ? Number.parseInt(req.query.rating as string, 10) : undefined,
+      status: req.query.status as ReviewStatus | undefined,
+    };
+    const { data, total } = await reviewService.getAllReviews(params);
+    res.json(successResponse({ data, total, page: params.page, limit: params.limit }, 'Reviews fetched'));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json(errorResponse('Failed to fetch reviews'));
+  }
+}
+
 export async function getReviewById(req: Request, res: Response): Promise<void> {
   try {
     const { blogId, reviewId } = req.params;
