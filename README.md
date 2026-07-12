@@ -116,6 +116,7 @@ Send `x-visitor-id` header (UUID from localStorage) for per-user tracking. IP is
 ### Reviews
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/reviews` | List all reviews across all blogs (`page`, `limit`, `rating`, `status`) |
 | GET | `/blogs/:blogId/reviews` | List reviews for a blog |
 | POST | `/blogs/:blogId/reviews` | Create a review |
 | PATCH | `/blogs/:blogId/reviews/:id` | Update a review |
@@ -124,6 +125,7 @@ Send `x-visitor-id` header (UUID from localStorage) for per-user tracking. IP is
 ### Comments
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/comments` | List all comments across all blogs (`page`, `limit`, `status`) |
 | GET | `/blogs/:blogId/comments` | List comments for a blog |
 | POST | `/blogs/:blogId/comments` | Create a comment |
 | PATCH | `/blogs/:blogId/comments/:id` | Update a comment |
