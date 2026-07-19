@@ -58,7 +58,7 @@ Express + TypeScript backend. All routes mount under `/api/v1` via `src/routes/a
 
 **Shared lib** (`src/lib/`):
 - `db.ts` — singleton `pg.Pool` exported as `pool`
-- `groq.ts` — OpenAI-compatible client pointed at `https://api.groq.com/openai/v1`, model `llama-3.3-70b-versatile`
+- `groq.ts` — OpenAI-compatible client pointed at `https://api.groq.com/openai/v1`, model `openai/gpt-oss-120b`
 - `response.ts` — `successResponse<T>` / `errorResponse` shape all JSON responses as `{ status, message, data, errors }`
 
 ## API Endpoints
