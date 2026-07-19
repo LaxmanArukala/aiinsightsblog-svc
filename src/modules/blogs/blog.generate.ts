@@ -31,7 +31,7 @@ Each item must have:
 JSON only, no extra text.`;
 
   const response = await getGroq().chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
     temperature: 0.8,
@@ -59,7 +59,7 @@ Return ONLY a valid JSON object with these fields:
 JSON only, no extra text.`;
 
   const response = await getGroq().chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
     temperature: 0.7,
