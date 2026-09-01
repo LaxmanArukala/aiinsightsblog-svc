@@ -14,14 +14,13 @@
 
 const https = require('node:https');
 const http  = require('node:http');
-const fs    = require('node:fs');
 const path  = require('node:path');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { fetchAllRSSTitles, isTopicAlreadyCovered } = require('./lib/external-duplicate-check');
 
 const API_BASE   = 'http://localhost:8000/api/v1';
-const WEB_PUBLIC = process.env.WEB_PUBLIC_DIR || '/home/ec2-user/aiinsightsblogs-web/public';
-const IMAGES_DIR = path.join(WEB_PUBLIC, 'assets', 'blog-images');
+const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
 
 const PROVIDER = {
   provider: 'groq',
@@ -207,67 +206,9 @@ function slugify(text) {
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-// ── SVG Generator ─────────────────────────────────────────────────────────────
-function wrapText(text, maxChars) {
-  const words = text.split(' ');
-  const lines = [];
-  let current = '';
-  for (const word of words) {
-    if ((current + ' ' + word).trim().length > maxChars) {
-      if (current) lines.push(current.trim());
-      current = word;
-    } else {
-      current = (current + ' ' + word).trim();
-    }
-  }
-  if (current) lines.push(current.trim());
-  return lines;
-}
-
-function generateSVG(title, category) {
-  const lines    = wrapText(title, 32);
-  let fontSize = 54;
-  if (lines.length > 3)      fontSize = 42;
-  else if (lines.length > 2) fontSize = 48;
-  const lineH    = fontSize * 1.3;
-  const totalH   = lines.length * lineH;
-  const startY   = (630 - totalH) / 2 + fontSize * 0.8;
-  const safe     = s => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  const textEls  = lines.map((line, i) =>
-    `<text x="600" y="${startY + i * lineH}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="white" filter="url(#shadow)">${safe(line)}</text>`
-  ).join('\n  ');
-
-  return `<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0f0f1a"/>
-      <stop offset="100%" style="stop-color:${category.dark}"/>
-    </linearGradient>
-    <linearGradient id="fade" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:${category.color};stop-opacity:0.15"/>
-      <stop offset="100%" style="stop-color:${category.color};stop-opacity:0.03"/>
-    </linearGradient>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.7)"/>
-    </filter>
-  </defs>
-  <rect width="1200" height="630" fill="url(#bg)"/>
-  <rect width="1200" height="630" fill="url(#fade)"/>
-  <circle cx="1050" cy="100" r="220" fill="${category.color}" opacity="0.06"/>
-  <circle cx="150"  cy="530" r="160" fill="${category.color}" opacity="0.06"/>
-  ${textEls}
-</svg>`;
-}
-
-function saveImage(slug, title, category) {
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  const fileName = `${slug}.svg`;
-  const filePath = path.join(IMAGES_DIR, fileName);
-  fs.writeFileSync(filePath, generateSVG(title, category), 'utf8');
-  return `/assets/blog-images/${fileName}`;
-}
 
 // ── AI caller ─────────────────────────────────────────────────────────────────
 function callAIOnce(prompt) {
@@ -444,6 +385,10 @@ async function main() {
   const existingTitles = await fetchExistingTitles();
   log(`Existing articles: ${existingTitles.size}`);
 
+  log('Fetching RSS feeds from AI news sources for duplicate-coverage check...');
+  const rssTitles = await fetchAllRSSTitles();
+  log(`Fetched ${rssTitles.length} recent titles from AI news RSS feeds`);
+
   let published = 0;
   const catSlugs = Object.keys(CATEGORIES);
 
@@ -460,7 +405,20 @@ async function main() {
       continue;
     }
 
-    const topic = pick(unused);
+    let topic = null;
+    for (const candidate of shuffle(unused)) {
+      const { covered, match } = await isTopicAlreadyCovered(candidate, rssTitles);
+      if (covered) {
+        log(`⚠ "${candidate}" already covered externally (matches "${match}"), trying another topic.`);
+        continue;
+      }
+      topic = candidate;
+      break;
+    }
+    if (!topic) {
+      log(`⚠ All trending topics for ${category.name} already covered by external sources, skipping.`);
+      continue;
+    }
     log(`Topic: "${topic}"`);
 
     let article;
@@ -482,13 +440,6 @@ async function main() {
       .replaceAll(/<img[^>]*>/gi, '');
 
     const slug = `${slugify(article.title)}-${Date.now()}`;
-    let imageUrl = '';
-    try {
-      imageUrl = saveImage(slug, article.title, category);
-      log(`Image saved: ${imageUrl}`);
-    } catch (err) {
-      log(`Warning: image save failed (${err.message}), continuing.`);
-    }
 
     const words    = article.content.replace(/<[^>]+>/g, ' ').split(/\s+/).length;
     const readTime = Math.max(3, Math.round(words / 200));
@@ -498,8 +449,8 @@ async function main() {
       slug,
       excerpt:        article.excerpt,
       content:        article.content,
-      thumbnail:      imageUrl,
-      featured_image: imageUrl,
+      thumbnail:      DEFAULT_THUMBNAIL,
+      featured_image: DEFAULT_THUMBNAIL,
       category:       { id: category.id, name: category.name, slug: category.slug, color: category.color },
       tags:           [...new Set([...category.baseTags, ...article.tags])],
       published_at:   new Date().toISOString(),
