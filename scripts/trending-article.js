@@ -276,7 +276,7 @@ function callAIOnce(prompt) {
       model:       PROVIDER.model,
       messages:    [{ role: 'user', content: prompt }],
       temperature: 0.75,
-      max_tokens:  8000,
+      max_tokens:  7200,
     });
 
     const req = https.request({
