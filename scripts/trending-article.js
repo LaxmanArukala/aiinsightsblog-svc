@@ -25,7 +25,7 @@ const IMAGES_DIR = path.join(WEB_PUBLIC, 'assets', 'blog-images');
 
 const PROVIDER = {
   provider: 'groq',
-  model:    'llama-3.3-70b-versatile',
+  model:    'openai/gpt-oss-120b',
   baseUrl:  'api.groq.com',
   path:     '/openai/v1/chat/completions',
   apiKey:   () => process.env.GROQ_API_KEY,

@@ -3,8 +3,8 @@
  * Daily AI article generator — Groq (AM) + Gemini (PM)
  *
  * Shift schedule (UTC):
- *   00:00, 04:00, 08:00  → Groq   (llama-3.3-70b-versatile)
- *   12:00, 16:00, 20:00  → Gemini (gemini-2.0-flash)
+ *   00:00, 04:00, 08:00  → Groq   (openai/gpt-oss-120b)
+ *   12:00, 16:00, 20:00  → Gemini (gemini-3.6-flash)
  *
  * Cron (server):
  *   every-4-hours cron: 0 [STAR]/4 [STAR] [STAR] [STAR] node .../daily-article.js >> .../daily-article.log 2>&1
@@ -27,7 +27,7 @@ const IMAGES_DIR    = path.join(WEB_PUBLIC, 'assets', 'blog-images');
 const PROVIDERS = {
   groq: {
     provider:  'groq',
-    model:     'llama-3.3-70b-versatile',
+    model:     'openai/gpt-oss-120b',
     baseUrl:   'api.groq.com',
     path:      '/openai/v1/chat/completions',
     apiKey:    () => process.env.GROQ_API_KEY,
@@ -36,7 +36,7 @@ const PROVIDERS = {
   },
   gemini: {
     provider:  'gemini',
-    model:     'gemini-2.0-flash',
+    model:     'gemini-3.6-flash',
     baseUrl:   'generativelanguage.googleapis.com',
     path:      '/v1beta/openai/chat/completions',
     apiKey:    () => process.env.GEMINI_API_KEY,
