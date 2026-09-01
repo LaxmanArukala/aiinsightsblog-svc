@@ -32,7 +32,7 @@ const PROVIDERS = {
     path:      '/openai/v1/chat/completions',
     apiKey:    () => process.env.GROQ_API_KEY,
     delayMs:   40000,
-    maxTokens: 7200,
+    maxTokens: 6900,
   },
   gemini: {
     provider:  'gemini',
