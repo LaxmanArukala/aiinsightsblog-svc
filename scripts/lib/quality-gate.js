@@ -330,7 +330,8 @@ function headOk(url, redirects = 3) {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
         return resolve(headOk(new URL(res.headers.location, u).toString(), redirects - 1));
       }
-      resolve(res.statusCode >= 200 && res.statusCode < 400);
+      // 401/403/405/429/999 mean the page exists but blocks bots; only 404/410/5xx/DNS failures are broken.
+      resolve(res.statusCode < 400 || [401, 403, 405, 429, 999].includes(res.statusCode));
     });
     req.on('error', () => resolve(false));
     req.on('timeout', () => { req.destroy(); resolve(false); });
@@ -372,8 +373,10 @@ async function generateUntilPasses({ generate, topic, corpus, log, sleep, delayM
     log(`  attempt ${attempt}/${maxAttempts}: ${fmt(result)} (need >= ${MIN_SCORE} on all)`);
     if (result.pass) return { article, result };
 
-    notes = feedback(result);
+    // Cumulative: a fix for one metric must not be forgotten when the next attempt fixes another.
+    notes = [...new Set([...notes, ...feedback(result)])];
     log(`  failing: ${result.failing.join(', ')}`);
+    for (const n of feedback(result).slice(0, 6)) log(`    - ${n.slice(0, 160)}`);
     if (attempt < maxAttempts) await sleep(delayMs);
   }
   return null;
