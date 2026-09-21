@@ -251,6 +251,14 @@ function buildCorpus(existing) {
   return { set, titles, prefixCount };
 }
 
+/** Fold a newly published/rewritten article into an existing corpus. */
+function addToCorpus(corpus, article) {
+  for (const h of shingles(plainText(article.content ?? ''))) corpus.set.add(h);
+  corpus.titles.push({ title: article.title, tokens: new Set(words(article.title).filter(x => !STOP.has(x))) });
+  const k = words(article.title).slice(0, 3).join(' ');
+  corpus.prefixCount[k] = (corpus.prefixCount[k] ?? 0) + 1;
+}
+
 function scoreOriginality(a, corpus) {
   const issues = [];
   const mine = shingles(plainText(a.content));
@@ -384,4 +392,4 @@ async function generateUntilPasses({ generate, topic, corpus, log, sleep, delayM
   return null;
 }
 
-module.exports = { generateUntilPasses, MIN_SCORE, QUALITY_RULES, buildCorpus, evaluate, feedback, fmt, stripBrokenLinks, primaryKeyword };
+module.exports = { generateUntilPasses, MIN_SCORE, QUALITY_RULES, buildCorpus, addToCorpus, evaluate, feedback, fmt, stripBrokenLinks, primaryKeyword };

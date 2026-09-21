@@ -19,6 +19,7 @@ const path  = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { fetchAllRSSTitles, isTopicAlreadyCovered } = require('./lib/external-duplicate-check');
 const quality = require('./lib/quality-gate');
+const rewrite = require('./lib/rewrite-state');
 
 const API_BASE   = 'http://localhost:8000/api/v1';
 const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
@@ -381,6 +382,11 @@ async function syncCategoryIds() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   log('=== Trending article generation started ===');
+
+  if (rewrite.rewriteInProgress()) {
+    log('Existing articles are still being rewritten; skipping new articles until that finishes.');
+    return;
+  }
 
   if (!PROVIDER.apiKey()) {
     log('ERROR: GROQ_API_KEY is not set');

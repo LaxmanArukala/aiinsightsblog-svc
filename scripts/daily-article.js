@@ -19,6 +19,7 @@ const path   = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { fetchAllRSSTitles, isTopicAlreadyCovered } = require('./lib/external-duplicate-check');
 const quality = require('./lib/quality-gate');
+const rewrite = require('./lib/rewrite-state');
 
 const API_BASE      = 'http://localhost:8000/api/v1';
 const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
@@ -481,12 +482,14 @@ function httpGet(url) {
   });
 }
 
-function httpPost(url, body) {
+function httpPost(url, body) { return httpRequest('POST', url, body); }
+
+function httpRequest(method, url, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const urlObj  = new URL(url);
     const req = http.request({
-      method:   'POST',
+      method,
       hostname: urlObj.hostname,
       port:     urlObj.port,
       path:     urlObj.pathname,
@@ -509,7 +512,7 @@ async function fetchExistingArticles() {
     const res  = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
-    all.push(...blogs.map(b => ({ title: b.title, content: b.content })));
+    all.push(...blogs);
     if (blogs.length < 100) break;
     page++;
   }
@@ -548,6 +551,23 @@ async function main() {
   const corpus = quality.buildCorpus(existingArticles);
   log(`Existing articles: ${existingTitles.size}`);
 
+  // One-off pass: rewrite every existing article through the quality gate before
+  // any new article is written. Resumes normal generation once nothing is pending.
+  if (new Date() >= rewrite.REWRITE_START) {
+    const failures = rewrite.readFailures();
+    const pending  = rewrite.pendingRewrites(existingArticles, failures);
+    rewrite.writeStatus(pending.length > 0, pending.length);
+    if (pending.length > 0) {
+      log(`Rewrite mode: ${pending.length} article(s) still to rewrite; new articles are paused.`);
+      await rewriteBatch(pending.slice(0, rewrite.REWRITE_PER_RUN), existingArticles, failures, provider);
+      const left = rewrite.pendingRewrites(existingArticles, rewrite.readFailures()).length;
+      rewrite.writeStatus(left > 0, left);
+      log(`=== Rewrite run done — ${left} article(s) remaining ===`);
+      return;
+    }
+    log('Rewrite pass complete; generating new articles.');
+  }
+
   log(`Fetching RSS feeds from AI news sources for duplicate-coverage check...`);
   const rssTitles = await fetchAllRSSTitles();
   log(`Fetched ${rssTitles.length} recent titles from AI news RSS feeds`);
@@ -568,6 +588,73 @@ async function main() {
   }
 
   log(`\n=== Done — ${published} article(s) published ===`);
+}
+
+// Rewrites a batch of existing articles in place (same id, slug, title and stats).
+// The old version stays live unless a new one clears every quality metric.
+async function rewriteBatch(batch, allArticles, failures, provider) {
+  const batchIds = new Set(batch.map(a => a.id));
+  // Exclude the batch itself so an article is not scored as a duplicate of its old text.
+  const corpus = quality.buildCorpus(allArticles.filter(a => !batchIds.has(a.id)));
+
+  for (let i = 0; i < batch.length; i++) {
+    const old = batch[i];
+    if (i > 0) await sleep(provider.delayMs);
+    log(`\n── Rewriting (${i + 1}/${batch.length}): "${old.title}" [${old.id}] ──`);
+
+    try {
+      const passed = await quality.generateUntilPasses({
+        generate: async (notes) => {
+          const a = await generateArticle(provider, old.title, notes);
+          a.title = old.title;
+          a.slug  = old.slug;
+          return a;
+        },
+        topic: old.title, corpus, log, sleep, delayMs: provider.delayMs,
+      });
+      if (!passed) {
+        failures[old.id] = (failures[old.id] ?? 0) + 1;
+        rewrite.writeFailures(failures);
+        log(`✗ Kept old version (failure ${failures[old.id]}/${rewrite.MAX_FAILURES}).`);
+        continue;
+      }
+
+      const { article } = passed;
+      const words = article.content.replace(/<[^>]+>/g, ' ').split(/\s+/).length;
+      // PATCH replaces the whole row, so send every existing field back unchanged.
+      const payload = {
+        title:          old.title,
+        slug:           old.slug,
+        excerpt:        article.excerpt,
+        content:        article.content,
+        thumbnail:      old.thumbnail,
+        featured_image: old.featured_image,
+        category:       old.category,
+        tags:           [...new Set([...(old.tags ?? []), ...article.tags])],
+        author:         old.author,
+        read_time:      Math.max(3, Math.round(words / 200)),
+        featured:       old.featured,
+        trending:       old.trending,
+        rating:         Number(old.rating) || 0,
+        review_count:   old.review_count ?? 0,
+      };
+      const res = await httpRequest('PATCH', `${API_BASE}/blogs/${old.id}`, payload);
+      if (res.status !== 200) {
+        log(`✗ Save failed (HTTP ${res.status}): ${JSON.stringify(res.body)}`);
+        failures[old.id] = (failures[old.id] ?? 0) + 1;
+        rewrite.writeFailures(failures);
+        continue;
+      }
+      old.content = article.content;
+      old.updated_at = new Date().toISOString();
+      quality.addToCorpus(corpus, { title: old.title, content: article.content });
+      log(`✓ Rewritten and saved.`);
+    } catch (err) {
+      failures[old.id] = (failures[old.id] ?? 0) + 1;
+      rewrite.writeFailures(failures);
+      log(`ERROR rewriting: ${err.message}`);
+    }
+  }
 }
 
 // Returns the published title (lowercased) on success, null on failure
