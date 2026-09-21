@@ -94,6 +94,13 @@ const CATEGORIES = {
       'Prompt Templates', 'LLM Prompts', 'AI Writing Prompts', 'Productivity Prompts',
       'Prompt Hacks', 'AI Tools', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
   },
+  // The categories API returns no slug, so syncCategoryIds() cannot match this one; keep the real UUID here.
+  'agentic-ai': {
+    id: 'dcc1cece-43e3-4d66-b6f1-6deb7789e3c0', name: 'Agentic AI', slug: 'agentic-ai', color: '#14b8a6', dark: '#0f766e',
+    baseTags: ['Agentic AI', 'RAG', 'Retrieval Augmented Generation', 'LangChain', 'LangGraph',
+      'AI Agents', 'Agentic Workflows', 'Forward Deployed Engineer', 'AI Automation',
+      'Fine-Tuning', 'Vector Database', 'Artificial Intelligence', 'AI Tutorial', 'AI 2025'],
+  },
 };
 
 // ── Topic pools ───────────────────────────────────────────────────────────────
@@ -256,6 +263,44 @@ const TOPICS = {
     'Iterative Prompting: How to Refine AI Output Step by Step',
     'Top ChatGPT Prompts for Brainstorming and Idea Generation',
     'Persona Prompts: Creating Consistent AI Characters Across Conversations',
+  ],
+  'agentic-ai': [
+    // RAG
+    'Building a Production RAG Pipeline from Scratch: Chunking, Embeddings, and Retrieval',
+    'Advanced RAG Techniques: Hybrid Search, Re-Ranking, and Query Rewriting',
+    'RAG Evaluation: Measuring Faithfulness, Relevance, and Context Precision with RAGAS',
+    'Choosing a Vector Database for RAG: Pinecone vs Weaviate vs Qdrant vs pgvector',
+    'Chunking Strategies for RAG: Fixed, Semantic, and Hierarchical Splitting Compared',
+    'Agentic RAG Workflows: Letting Agents Decide When and What to Retrieve',
+    'Graph RAG: Combining Knowledge Graphs with LLMs for Multi-Hop Questions',
+    'Fixing RAG Hallucinations: Grounding, Citations, and Answer Verification',
+    // LangChain / LangGraph
+    'LangChain Tutorial: Building Your First LLM Application Step by Step',
+    'LangGraph Explained: Building Stateful Agent Workflows as Graphs',
+    'LangChain Expression Language (LCEL): Composing Chains the Modern Way',
+    'Building a Document Q&A Agent with LangChain, Chroma, and OpenAI',
+    'Human-in-the-Loop Agent Workflows with LangGraph Checkpoints and Interrupts',
+    'LangSmith for Agent Debugging: Tracing, Evaluating, and Monitoring LLM Apps',
+    'LangChain vs LlamaIndex vs Haystack: Which Framework Should You Use?',
+    // Automation and FDE (forward deployed engineering) workflows
+    'What Is a Forward Deployed Engineer? Skills, Workflows, and Why FDE Roles Are Booming',
+    'Forward Deployed Engineering with AI Agents: Turning Customer Problems into Working Automation',
+    'How to Automate Business Workflows with AI Agents: A Practical Blueprint',
+    'Building an Email and Ticket Triage Agent That Routes Work Automatically',
+    'Workflow Automation with n8n and LLM Agents: End-to-End Build Guide',
+    'Designing Agentic Workflows: Planning, Tool Use, Reflection, and Multi-Agent Patterns',
+    'Enterprise AI Agent Integration: Connecting Agents to CRMs, Databases, and Internal APIs',
+    'Model Context Protocol (MCP): Connecting AI Agents to Tools and Data Sources',
+    'Deploying AI Agents to Production: Queues, Retries, Guardrails, and Cost Control',
+    'Evaluating Agentic Workflows: Test Sets, LLM-as-Judge, and Regression Testing for Agents',
+    // Training and adapting models for agents
+    'How to Fine-Tune an LLM for Agentic Tasks: Function Calling and Tool-Use Datasets',
+    'Training Data for AI Agents: Collecting Trajectories and Building Instruction Datasets',
+    'LoRA and QLoRA for Agents: Fine-Tuning Open Models on a Single GPU',
+    'RAG vs Fine-Tuning for Agents: When to Retrieve and When to Train',
+    'Reinforcement Learning for LLM Agents: RLHF, DPO, and Reward Design Explained',
+    'Distilling a Large Agent into a Small Model: Cheaper, Faster Agentic Workflows',
+    'Synthetic Data for Training AI Agents: Generating and Filtering Tool-Use Examples',
   ],
 };
 
