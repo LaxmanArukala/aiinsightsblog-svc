@@ -176,11 +176,8 @@ function scoreSeo(a, topic) {
   const cand = kw.filter(t => !GENERIC.has(t)).slice(0, 3);
   const stem = (t) => t.replace(/(ing|ed|es|s)$/, '');
   const stemmed = w.map(stem);
-  let density = 0;
-  for (const t of cand) {
-    const n = stemmed.filter(x => x === stem(t)).length;
-    density = Math.max(density, (n / (wc || 1)) * 100);
-  }
+  const dens = cand.map(t => (stemmed.filter(x => x === stem(t)).length / (wc || 1)) * 100);
+  const density = dens.find(d => d >= 0.4 && d <= 2) ?? Math.max(0, ...dens);
   add(density >= 0.4 && density <= 2, 10, `Keyword density must be 0.4-2% (now ${density.toFixed(2)}%).`, density > 0.15 && density < 3 ? 5 : 0);
 
   const h2 = (html.match(/<h2[\s>]/gi) ?? []).length;
