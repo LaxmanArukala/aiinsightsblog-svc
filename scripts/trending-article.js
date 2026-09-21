@@ -354,7 +354,7 @@ async function fetchExistingArticles() {
   const all = [];
   let page = 1;
   while (true) {
-    const res   = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
+    const res   = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}&status=all`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
     all.push(...blogs.map(b => ({ title: b.title, content: b.content })));
@@ -436,6 +436,7 @@ async function main() {
     log(`Topic: "${topic}"`);
 
     let article;
+    let qualityScores;
     try {
       const passed = await quality.generateUntilPasses({
         generate: (notes) => generateArticle(topic, notes),
@@ -446,6 +447,7 @@ async function main() {
         continue;
       }
       article = passed.article;
+      qualityScores = quality.summarize(passed.result);
       log(`Generated: "${article.title}"`);
     } catch (err) {
       log(`ERROR generating article: ${err.message}`);
@@ -477,6 +479,8 @@ async function main() {
       trending:       true,
       rating:         0,
       review_count:   0,
+      status:         'pending_review',
+      quality_scores: qualityScores,
     };
 
     try {
@@ -486,7 +490,7 @@ async function main() {
         continue;
       }
       existingTitles.add(article.title.toLowerCase().trim());
-      log(`✓ Published! ID: ${res.body.data?.id} | Read time: ${readTime} min`);
+      log(`✓ Saved for approval! ID: ${res.body.data?.id} | Read time: ${readTime} min`);
       published++;
     } catch (err) {
       log(`ERROR saving article: ${err.message}`);

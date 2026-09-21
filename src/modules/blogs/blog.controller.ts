@@ -14,6 +14,8 @@ export async function getBlogs(req: Request, res: Response): Promise<void> {
       featured: req.query.featured === undefined ? undefined : req.query.featured === 'true',
       category: (req.query.category_slug ?? req.query.category) as string | undefined,
       category_name: req.query.category_name as string | undefined,
+      status: req.query.status as BlogListQuery['status'] | undefined,
+      review: req.query.review === 'true',
     };
     const result = await blogService.getBlogs(query);
     res.json(successResponse(result, 'Blogs fetched successfully'));
@@ -124,5 +126,55 @@ export async function generateBlogListHandler(req: Request, res: Response): Prom
     res.json(successResponse({ data: blogs, meta: { total: blogs.length, category } }, 'Blog list generated successfully'));
   } catch (err) {
     res.status(500).json(errorResponse('Failed to generate blog list', [(err as Error).message]));
+  }
+}
+
+export async function submitRevision(req: Request, res: Response): Promise<void> {
+  try {
+    const { content, excerpt, tags, read_time, quality_scores } = req.body ?? {};
+    if (!content) {
+      res.status(400).json(errorResponse('Validation failed', ['content is required']));
+      return;
+    }
+    const blog = await blogService.submitRevision(req.params.id, {
+      content,
+      excerpt: excerpt ?? null,
+      tags: Array.isArray(tags) ? tags : [],
+      read_time: Number(read_time) || 0,
+      quality_scores: quality_scores ?? null,
+    });
+    if (!blog) {
+      res.status(404).json(errorResponse('Published blog not found'));
+      return;
+    }
+    res.json(successResponse(blog, 'Revision submitted for approval'));
+  } catch (err) {
+    res.status(500).json(errorResponse('Failed to submit revision', [(err as Error).message]));
+  }
+}
+
+export async function approveBlog(req: Request, res: Response): Promise<void> {
+  try {
+    const blog = await blogService.approveBlog(req.params.id);
+    if (!blog) {
+      res.status(404).json(errorResponse('Nothing awaiting approval for this blog'));
+      return;
+    }
+    res.json(successResponse(blog, 'Blog approved'));
+  } catch (err) {
+    res.status(500).json(errorResponse('Failed to approve blog', [(err as Error).message]));
+  }
+}
+
+export async function rejectBlog(req: Request, res: Response): Promise<void> {
+  try {
+    const blog = await blogService.rejectBlog(req.params.id);
+    if (!blog) {
+      res.status(404).json(errorResponse('Nothing awaiting approval for this blog'));
+      return;
+    }
+    res.json(successResponse(blog, 'Blog rejected'));
+  } catch (err) {
+    res.status(500).json(errorResponse('Failed to reject blog', [(err as Error).message]));
   }
 }

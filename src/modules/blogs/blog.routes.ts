@@ -15,6 +15,11 @@ router.post('/', blogController.createBlog);
 router.patch('/:id', blogController.upsertBlog);
 router.delete('/:id', blogController.deleteBlog);
 
+// Approval workflow (AI-written articles are held until an admin approves them)
+router.put('/:id/revision', blogController.submitRevision);
+router.post('/:id/approve', blogController.approveBlog);
+router.post('/:id/reject', blogController.rejectBlog);
+
 // Nested: /api/v1/blogs/:blogId/reviews
 router.use('/:blogId/reviews', reviewRoutes);
 

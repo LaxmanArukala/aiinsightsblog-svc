@@ -509,7 +509,7 @@ async function fetchExistingArticles() {
   const all = [];
   let page = 1;
   while (true) {
-    const res  = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
+    const res  = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}&status=all`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
     all.push(...blogs);
@@ -590,8 +590,8 @@ async function main() {
   log(`\n=== Done — ${published} article(s) published ===`);
 }
 
-// Rewrites a batch of existing articles in place (same id, slug, title and stats).
-// The old version stays live unless a new one clears every quality metric.
+// Rewrites a batch of existing articles. Each rewrite that clears the quality gate is stored
+// as a pending revision for admin approval; the live article is never touched here.
 async function rewriteBatch(batch, allArticles, failures, provider) {
   const batchIds = new Set(batch.map(a => a.id));
   // Exclude the batch itself so an article is not scored as a duplicate of its old text.
@@ -619,36 +619,25 @@ async function rewriteBatch(batch, allArticles, failures, provider) {
         continue;
       }
 
-      const { article } = passed;
+      const { article, result } = passed;
       const words = article.content.replace(/<[^>]+>/g, ' ').split(/\s+/).length;
-      // PATCH replaces the whole row, so send every existing field back unchanged.
-      const payload = {
-        title:          old.title,
-        slug:           old.slug,
-        excerpt:        article.excerpt,
+      // The live article stays untouched; the rewrite waits in the admin approval tab.
+      const res = await httpRequest('PUT', `${API_BASE}/blogs/${old.id}/revision`, {
         content:        article.content,
-        thumbnail:      old.thumbnail,
-        featured_image: old.featured_image,
-        category:       old.category,
+        excerpt:        article.excerpt,
         tags:           [...new Set([...(old.tags ?? []), ...article.tags])],
-        author:         old.author,
         read_time:      Math.max(3, Math.round(words / 200)),
-        featured:       old.featured,
-        trending:       old.trending,
-        rating:         Number(old.rating) || 0,
-        review_count:   old.review_count ?? 0,
-      };
-      const res = await httpRequest('PATCH', `${API_BASE}/blogs/${old.id}`, payload);
+        quality_scores: quality.summarize(result),
+      });
       if (res.status !== 200) {
         log(`✗ Save failed (HTTP ${res.status}): ${JSON.stringify(res.body)}`);
         failures[old.id] = (failures[old.id] ?? 0) + 1;
         rewrite.writeFailures(failures);
         continue;
       }
-      old.content = article.content;
-      old.updated_at = new Date().toISOString();
+      old.revision = { content: article.content };
       quality.addToCorpus(corpus, { title: old.title, content: article.content });
-      log(`✓ Rewritten and saved.`);
+      log(`✓ Rewrite saved for approval.`);
     } catch (err) {
       failures[old.id] = (failures[old.id] ?? 0) + 1;
       rewrite.writeFailures(failures);
@@ -685,6 +674,7 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
   log(`Topic: "${topic}"`);
 
   let article;
+  let qualityScores;
   try {
     const passed = await quality.generateUntilPasses({
       generate: (notes) => generateArticle(provider, topic, notes),
@@ -695,6 +685,7 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
       return null;
     }
     article = passed.article;
+    qualityScores = quality.summarize(passed.result);
     log(`Generated: "${article.title}"`);
   } catch (err) {
     log(`ERROR generating article: ${err.message}`);
@@ -726,6 +717,8 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
     trending:       false,
     rating:         0,
     review_count:   0,
+    status:         'pending_review',
+    quality_scores: qualityScores,
   };
 
   try {
@@ -734,7 +727,7 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
       log(`Save failed (HTTP ${res.status}): ${JSON.stringify(res.body)}`);
       return null;
     }
-    log(`✓ Published! ID: ${res.body.data?.id} | Read time: ${readTime} min`);
+    log(`✓ Saved for approval! ID: ${res.body.data?.id} | Read time: ${readTime} min`);
     return article.title.toLowerCase().trim();
   } catch (err) {
     log(`ERROR saving article: ${err.message}`);

@@ -11,6 +11,25 @@ export interface Author {
   bio?: string;
 }
 
+export type BlogStatus = 'published' | 'pending_review' | 'rejected';
+
+/** Written by the article cron; shown to the reviewer in the admin. */
+export interface QualityScores {
+  scores: { overall: number; seo: number; originality: number; tone: number; activeVoice: number };
+  minScore: number;
+  detail?: Record<string, unknown>;
+}
+
+/** A rewrite of a live article, held until an admin approves it. */
+export interface BlogRevision {
+  content: string;
+  excerpt: string | null;
+  tags: string[];
+  read_time: number;
+  quality_scores: QualityScores | null;
+  created_at: string;
+}
+
 export interface Blog {
   id: string;
   slug: string;
@@ -31,6 +50,9 @@ export interface Blog {
   trending: boolean;
   rating: number;
   review_count: number;
+  status: BlogStatus;
+  quality_scores: QualityScores | null;
+  revision: BlogRevision | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -51,6 +73,8 @@ export interface CreateBlogDto {
   trending?: boolean;
   rating?: number;
   review_count?: number;
+  status?: BlogStatus;
+  quality_scores?: QualityScores;
 }
 
 export interface UpsertBlogDto extends CreateBlogDto {}
@@ -63,6 +87,10 @@ export interface BlogListQuery {
   featured?: boolean;
   category?: string;
   category_name?: string;
+  /** Defaults to 'published' so drafts never reach the public site. 'all' disables the filter. */
+  status?: BlogStatus | 'all';
+  /** Admin approval queue: pending new articles plus live articles with a pending rewrite. */
+  review?: boolean;
 }
 
 export interface PaginatedResponse<T> {

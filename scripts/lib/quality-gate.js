@@ -318,6 +318,9 @@ function feedback(result) {
   return [...new Set(lines)];
 }
 
+/** Compact, JSON-safe copy of a gate result, stored with the article for the admin reviewer. */
+const summarize = (r) => ({ scores: r.scores, minScore: MIN_SCORE, detail: r.detail });
+
 const fmt = (r) => Object.entries(r.scores).map(([k, v]) => `${k}=${v}`).join(' ');
 
 /** Prompt rules that make first-pass articles more likely to clear the gate. */
@@ -392,4 +395,4 @@ async function generateUntilPasses({ generate, topic, corpus, log, sleep, delayM
   return null;
 }
 
-module.exports = { generateUntilPasses, MIN_SCORE, QUALITY_RULES, buildCorpus, addToCorpus, evaluate, feedback, fmt, stripBrokenLinks, primaryKeyword };
+module.exports = { generateUntilPasses, MIN_SCORE, QUALITY_RULES, buildCorpus, addToCorpus, summarize, evaluate, feedback, fmt, stripBrokenLinks, primaryKeyword };

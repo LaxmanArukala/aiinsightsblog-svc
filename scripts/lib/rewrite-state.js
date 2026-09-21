@@ -3,9 +3,9 @@
 /**
  * State for the one-off "rewrite every existing article through the quality gate" pass.
  *
- * An article is pending when it was last updated before REWRITE_START. A successful rewrite
- * PATCHes the row, which bumps updated_at, so the article drops out of the pending list on
- * its own. Only failures need remembering, so an article the gate rejects every time
+ * An article is pending when it was last updated before REWRITE_START and has no rewrite
+ * waiting for approval. A rewrite is stored as a revision next to the live article; approving
+ * or rejecting it bumps updated_at, so the article then drops out of the pending list. Only failures need remembering, so an article the gate rejects every time
  * cannot block new-article generation forever.
  *
  * While the pass is running, both cron scripts skip new-article generation.
@@ -34,10 +34,10 @@ function writeJson(file, data) {
 const readFailures  = () => readJson(STATE_FILE, { failures: {} }).failures ?? {};
 const writeFailures = (failures) => writeJson(STATE_FILE, { failures });
 
-/** Oldest-updated articles that still need the rewrite, most-viewed first. */
+/** Articles that still need the rewrite (most-viewed first). One already waiting for approval is not pending. */
 function pendingRewrites(articles, failures) {
   return articles
-    .filter(a => new Date(a.updated_at) < REWRITE_START && (failures[a.id] ?? 0) < MAX_FAILURES)
+    .filter(a => a.status === 'published' && !a.revision && new Date(a.updated_at) < REWRITE_START && (failures[a.id] ?? 0) < MAX_FAILURES)
     .sort((a, b) => (b.views - a.views) || (new Date(a.published_at) - new Date(b.published_at)));
 }
 
