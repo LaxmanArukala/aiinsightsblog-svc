@@ -18,6 +18,7 @@ const path   = require('node:path');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { fetchAllRSSTitles, isTopicAlreadyCovered } = require('./lib/external-duplicate-check');
+const quality = require('./lib/quality-gate');
 
 const API_BASE      = 'http://localhost:8000/api/v1';
 const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
@@ -387,10 +388,15 @@ E-E-A-T & AUTHORITY SIGNALS:
 - Reference real use cases or verifiable facts to demonstrate experience and expertise.
 - Include a brief author expertise note in a <p> at the very end of the content.
 
+${quality.QUALITY_RULES}
+
 OUTPUT: Return raw JSON only. No code fences. No markdown wrapper. No explanation.`;
 
-async function generateArticle(shift, topic) {
-  const userPrompt = `Write a complete, publish-ready article about: "${topic}".
+async function generateArticle(shift, topic, notes = []) {
+  const retryNotes = notes.length
+    ? `\n\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE QUALITY CHECK. Fix all of the following:\n${notes.map(n => `- ${n}`).join('\n')}\n`
+    : '';
+  const userPrompt = `Write a complete, publish-ready article about: "${topic}".${retryNotes}
 
 Return ONLY a valid JSON object with these exact fields:
 - "title": SEO-friendly blog title that contains the primary keyword (string)
@@ -451,18 +457,18 @@ function httpPost(url, body) {
   });
 }
 
-async function fetchExistingTitles() {
-  const titles = new Set();
+async function fetchExistingArticles() {
+  const all = [];
   let page = 1;
   while (true) {
     const res  = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
-    blogs.forEach(b => titles.add(b.title.toLowerCase().trim()));
+    all.push(...blogs.map(b => ({ title: b.title, content: b.content })));
     if (blogs.length < 100) break;
     page++;
   }
-  return titles;
+  return all;
 }
 
 // Fetch real UUIDs from the categories API and patch CATEGORIES in place
@@ -492,7 +498,9 @@ async function main() {
   }
 
   await syncCategoryIds();
-  const existingTitles = await fetchExistingTitles();
+  const existingArticles = await fetchExistingArticles();
+  const existingTitles = new Set(existingArticles.map(a => a.title.toLowerCase().trim()));
+  const corpus = quality.buildCorpus(existingArticles);
   log(`Existing articles: ${existingTitles.size}`);
 
   log(`Fetching RSS feeds from AI news sources for duplicate-coverage check...`);
@@ -510,7 +518,7 @@ async function main() {
       log(`Waiting ${provider.delayMs / 1000}s for ${provider.provider} rate limit...`);
       await sleep(provider.delayMs);
     }
-    const result = await publishArticleForCategory(catSlugs[i], existingTitles, provider, rssTitles);
+    const result = await publishArticleForCategory(catSlugs[i], existingTitles, provider, rssTitles, corpus);
     if (result) { existingTitles.add(result); published++; }
   }
 
@@ -518,7 +526,7 @@ async function main() {
 }
 
 // Returns the published title (lowercased) on success, null on failure
-async function publishArticleForCategory(catSlug, existingTitles, provider, rssTitles) {
+async function publishArticleForCategory(catSlug, existingTitles, provider, rssTitles, corpus) {
   const category = CATEGORIES[catSlug];
   log(`\n── Category: ${category.name} ──`);
 
@@ -546,7 +554,15 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
 
   let article;
   try {
-    article = await generateArticle(provider, topic);
+    const passed = await quality.generateUntilPasses({
+      generate: (notes) => generateArticle(provider, topic, notes),
+      topic, corpus, log, sleep, delayMs: provider.delayMs,
+    });
+    if (!passed) {
+      log(`✗ Not published: no attempt reached ${quality.MIN_SCORE}/100 on every quality metric.`);
+      return null;
+    }
+    article = passed.article;
     log(`Generated: "${article.title}"`);
   } catch (err) {
     log(`ERROR generating article: ${err.message}`);
@@ -557,11 +573,6 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
     log(`Duplicate title detected, skipping.`);
     return null;
   }
-
-  // Strip any images the AI included in the content
-  article.content = article.content
-    .replaceAll(/!\[.*?\]\(.*?\)/g, '')
-    .replaceAll(/<img[^>]*>/gi, '');
 
   const slug = `${slugify(article.title)}-${Date.now()}`;
 

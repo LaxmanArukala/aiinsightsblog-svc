@@ -18,6 +18,7 @@ const path  = require('node:path');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { fetchAllRSSTitles, isTopicAlreadyCovered } = require('./lib/external-duplicate-check');
+const quality = require('./lib/quality-gate');
 
 const API_BASE   = 'http://localhost:8000/api/v1';
 const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
@@ -289,17 +290,22 @@ function extractJSON(text) {
   throw new Error(`Could not extract JSON: ${text.slice(0, 300)}`);
 }
 
-async function generateArticle(topic) {
-  const prompt = `Write an engaging, reader-friendly blog post about: "${topic}".
+async function generateArticle(topic, notes = []) {
+  const retryNotes = notes.length
+    ? `\n\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE QUALITY CHECK. Fix all of the following:\n${notes.map(n => `- ${n}`).join('\n')}\n`
+    : '';
+  const prompt = `Write an engaging, reader-friendly blog post about: "${topic}".${retryNotes}
 
 This article is for a general audience curious about AI trends — not just developers. Write like a journalist or tech writer explaining complex ideas simply.
 
 Return ONLY a valid JSON object with these exact fields:
 - title: A compelling, curiosity-driven headline (string)
 - slug: URL-friendly slug, lowercase, hyphens only (string)
-- excerpt: A hook-style 2-3 sentence summary that makes the reader want to read more, under 300 characters (string)
+- excerpt: A hook-style summary that makes the reader want to read more, 140-160 characters, containing the primary keyword (string)
 - tags: Array of 10-15 SEO tags — mix of specific topic keywords, industry terms, trend keywords, and broad AI terms like "AI 2025", "future of AI", "AI trends" (array of strings)
-- content: Full article in HTML format, minimum 1000 words. Use <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote> tags. Style: conversational, engaging, journalistic. Include real-world examples, current context, impact on people and industries, expert perspectives, and a forward-looking conclusion. Do NOT include <html>, <head>, <body>, or <img> tags.
+- content: Full article in HTML format, minimum 1500 words, ending with a Frequently Asked Questions section. Use <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote> tags. Style: conversational, engaging, journalistic. Include real-world examples, current context, impact on people and industries, expert perspectives, and a forward-looking conclusion. Do NOT include <html>, <head>, <body>, or <img> tags.
+
+${quality.QUALITY_RULES}
 
 Rules: Return raw JSON only. No code fences. No markdown wrapper.`;
 
@@ -343,18 +349,18 @@ function httpPost(url, body) {
   });
 }
 
-async function fetchExistingTitles() {
-  const titles = new Set();
+async function fetchExistingArticles() {
+  const all = [];
   let page = 1;
   while (true) {
     const res   = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
-    blogs.forEach(b => titles.add(b.title.toLowerCase().trim()));
+    all.push(...blogs.map(b => ({ title: b.title, content: b.content })));
     if (blogs.length < 100) break;
     page++;
   }
-  return titles;
+  return all;
 }
 
 // Fetch real UUIDs from the categories API and patch CATEGORIES in place
@@ -382,7 +388,9 @@ async function main() {
   }
 
   await syncCategoryIds();
-  const existingTitles = await fetchExistingTitles();
+  const existingArticles = await fetchExistingArticles();
+  const existingTitles = new Set(existingArticles.map(a => a.title.toLowerCase().trim()));
+  const corpus = quality.buildCorpus(existingArticles);
   log(`Existing articles: ${existingTitles.size}`);
 
   log('Fetching RSS feeds from AI news sources for duplicate-coverage check...');
@@ -423,7 +431,15 @@ async function main() {
 
     let article;
     try {
-      article = await generateArticle(topic);
+      const passed = await quality.generateUntilPasses({
+        generate: (notes) => generateArticle(topic, notes),
+        topic, corpus, log, sleep, delayMs: 40000,
+      });
+      if (!passed) {
+        log(`✗ Not published: no attempt reached ${quality.MIN_SCORE}/100 on every quality metric.`);
+        continue;
+      }
+      article = passed.article;
       log(`Generated: "${article.title}"`);
     } catch (err) {
       log(`ERROR generating article: ${err.message}`);
@@ -434,10 +450,6 @@ async function main() {
       log('Duplicate title detected, skipping.');
       continue;
     }
-
-    article.content = article.content
-      .replaceAll(/!\[.*?\]\(.*?\)/g, '')
-      .replaceAll(/<img[^>]*>/gi, '');
 
     const slug = `${slugify(article.title)}-${Date.now()}`;
 
