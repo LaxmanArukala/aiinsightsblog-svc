@@ -170,11 +170,16 @@ function scoreSeo(a, topic) {
   add(coverage(kw, a.excerpt ?? '') >= 0.6, 4, 'Excerpt must contain the primary keyword.');
   add(coverage(kw, first100) >= 0.6, 10, 'Use the primary keyword within the first 100 words.');
 
-  const core = kw.slice(0, 2);
+  // Density of the strongest of the first three keyword tokens (a topic like "From Chatbots to AI Employees"
+  // never appears as one exact phrase, so an adjacent-pair match would read 0%).
+  const GENERIC = new Set(['ai', 'guide', 'introduction', 'explained', 'complete', 'best', 'new', 'future']);
+  const cand = kw.filter(t => !GENERIC.has(t)).slice(0, 3);
+  const stem = (t) => t.replace(/(ing|ed|es|s)$/, '');
+  const stemmed = w.map(stem);
   let density = 0;
-  if (core.length === 2) {
-    const re = new RegExp(`\\b${core[0]}\\w*[\\s-]+${core[1]}\\w*`, 'gi');
-    density = ((text.match(re) ?? []).length / (wc || 1)) * 100;
+  for (const t of cand) {
+    const n = stemmed.filter(x => x === stem(t)).length;
+    density = Math.max(density, (n / (wc || 1)) * 100);
   }
   add(density >= 0.4 && density <= 2, 10, `Keyword density must be 0.4-2% (now ${density.toFixed(2)}%).`, density > 0.15 && density < 3 ? 5 : 0);
 
@@ -317,7 +322,7 @@ QUALITY BAR (every article is auto-scored; anything under ${MIN_SCORE}/100 on an
 - HUMAN TONE: plain words, concrete specifics (numbers, versions, tool and company names), varied sentence length with some very short sentences. No hype or filler.
 - BANNED PHRASES: delve, dive into, unlock, unleash, revolutionize, game-changer, cutting-edge, seamless, landscape, realm, tapestry, "in today's", "it's important to note", "in conclusion", furthermore, moreover, harness the power, embark, elevate, transformative, groundbreaking, paradigm shift. Do not use em dashes.
 - ORIGINAL: give a specific angle, fresh examples and your own structure. The title must not start with a formula such as "Unlocking the Power of" or "The AI Revolution".
-- SEO: primary keyword in title, in the first 100 words, and in the meta description; title 30-60 characters; excerpt 140-160 characters; one <h2> at least every 300 words; at least 1500 words; a final "Frequently Asked Questions" <h2> with 3-5 <h3> questions; at least one bulleted list and one real, verifiable external source link.`;
+- SEO: primary keyword in title, in the first 100 words, and in the meta description; title 30-60 characters; excerpt 140-160 characters; one <h2> at least every 300 words; at least 1500 words; a final "Frequently Asked Questions" <h2> with 3-5 <h3> questions; at least one bulleted list and one external source link. Link ONLY to the homepage of an official site (e.g. https://openai.com, https://arxiv.org, https://github.com/langchain-ai/langchain) or a Wikipedia article you are certain exists. Never deep-link to blog posts, news stories or papers, because invented URLs are removed automatically.`;
 
 // ── link verification ─────────────────────────────────────────────────────────
 function headOk(url, redirects = 3) {
