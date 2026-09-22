@@ -46,6 +46,11 @@ export async function getBlogs(query: BlogListQuery): Promise<PaginatedResponse<
     conditions.push(`status = $${params.length}`);
   }
 
+  if (query.rewritten !== undefined) {
+    params.push(query.rewritten);
+    conditions.push(`rewritten = $${params.length}`);
+  }
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countResult = await pool.query(`SELECT COUNT(*) FROM blogs ${where}`, params);
@@ -181,6 +186,9 @@ export async function approveBlog(id: string): Promise<Blog | null> {
        quality_scores = COALESCE(revision->'quality_scores', quality_scores),
        published_at   = CASE WHEN status = 'pending_review' THEN NOW() ELSE published_at END,
        status         = 'published',
+       -- A revision going live is a completed rewrite; a brand-new article is not.
+       rewritten           = CASE WHEN revision IS NOT NULL THEN true ELSE rewritten END,
+       rewrite_reviewed_at = CASE WHEN revision IS NOT NULL THEN NOW() ELSE rewrite_reviewed_at END,
        revision       = NULL,
        updated_at     = NOW()
      WHERE id = $1 AND (status = 'pending_review' OR revision IS NOT NULL)
@@ -195,6 +203,8 @@ export async function rejectBlog(id: string): Promise<Blog | null> {
   const result = await pool.query<Blog>(
     `UPDATE blogs SET
        status     = CASE WHEN status = 'pending_review' THEN 'rejected' ELSE status END,
+       -- Rejecting a rewrite keeps the live text and takes the article out of the queue.
+       rewrite_reviewed_at = CASE WHEN revision IS NOT NULL THEN NOW() ELSE rewrite_reviewed_at END,
        revision   = NULL,
        updated_at = NOW()
      WHERE id = $1 AND (status = 'pending_review' OR revision IS NOT NULL)

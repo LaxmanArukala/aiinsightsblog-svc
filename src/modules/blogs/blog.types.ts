@@ -53,6 +53,10 @@ export interface Blog {
   status: BlogStatus;
   quality_scores: QualityScores | null;
   revision: BlogRevision | null;
+  /** True once an approved rewrite is live. */
+  rewritten: boolean;
+  /** Set on approve or reject, so a decided article is never queued for rewrite again. */
+  rewrite_reviewed_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -91,6 +95,8 @@ export interface BlogListQuery {
   status?: BlogStatus | 'all';
   /** Admin approval queue: pending new articles plus live articles with a pending rewrite. */
   review?: boolean;
+  /** Filter by the rewrite flag. */
+  rewritten?: boolean;
 }
 
 export interface PaginatedResponse<T> {

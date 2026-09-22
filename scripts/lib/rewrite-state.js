@@ -1,14 +1,19 @@
 'use strict';
 
 /**
- * State for the one-off "rewrite every existing article through the quality gate" pass.
+ * State for the "rewrite every existing article through the quality gate" pass.
  *
- * An article is pending when it was last updated before REWRITE_START and has no rewrite
- * waiting for approval. A rewrite is stored as a revision next to the live article; approving
- * or rejecting it bumps updated_at, so the article then drops out of the pending list. Only failures need remembering, so an article the gate rejects every time
- * cannot block new-article generation forever.
+ * Queue membership is decided by explicit columns, not by timestamps:
+ *   pending  = published, rewritten = false, no revision waiting, never reviewed
+ * A rewrite is stored as a `revision` beside the live article, so the article leaves
+ * the queue the moment one is submitted, and `rewrite_reviewed_at` keeps it out once
+ * you approve or reject. (An earlier version compared updated_at against a start date,
+ * which misread ~200 articles that an unrelated 2026-06 script had touched.)
  *
- * While the pass is running, both cron scripts skip new-article generation.
+ * The pass is rate-limited to REWRITE_PER_DAY articles across all cron runs, because
+ * every rewrite has to be reviewed by hand.
+ *
+ * While anything is still pending, both cron scripts skip new-article generation.
  * daily-article.js writes the status file; trending-article.js reads it.
  */
 
@@ -19,9 +24,8 @@ const DATA_DIR    = path.join(__dirname, '..', 'data');
 const STATE_FILE  = path.join(DATA_DIR, 'rewrite-state.json');
 const STATUS_FILE = path.join(DATA_DIR, 'rewrite-status.json');
 
-const REWRITE_START     = new Date(process.env.REWRITE_START || '2026-09-22T00:00:00Z');
-const REWRITE_PER_RUN   = Number(process.env.REWRITE_PER_RUN) || 8;
-const MAX_FAILURES      = Number(process.env.REWRITE_MAX_FAILURES) || 3;
+const REWRITE_PER_DAY = Number(process.env.REWRITE_PER_DAY) || 6;
+const MAX_FAILURES    = Number(process.env.REWRITE_MAX_FAILURES) || 3;
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -31,13 +35,38 @@ function writeJson(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-const readFailures  = () => readJson(STATE_FILE, { failures: {} }).failures ?? {};
-const writeFailures = (failures) => writeJson(STATE_FILE, { failures });
+const readState  = () => readJson(STATE_FILE, {});
+const writeState = (state) => writeJson(STATE_FILE, state);
 
-/** Articles that still need the rewrite (most-viewed first). One already waiting for approval is not pending. */
+const readFailures  = () => readState().failures ?? {};
+const writeFailures = (failures) => writeState({ ...readState(), failures });
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** How many more articles may be rewritten today (UTC day). */
+function remainingToday() {
+  const { quotaDate, quotaUsed = 0 } = readState();
+  const used = quotaDate === today() ? quotaUsed : 0;
+  return Math.max(0, REWRITE_PER_DAY - used);
+}
+
+/** Record `n` rewrites submitted today against the daily quota. */
+function consumeQuota(n) {
+  if (n <= 0) return;
+  const state = readState();
+  const used  = state.quotaDate === today() ? (state.quotaUsed ?? 0) : 0;
+  writeState({ ...state, quotaDate: today(), quotaUsed: used + n });
+}
+
+/** Articles still needing a rewrite, most-viewed first. */
 function pendingRewrites(articles, failures) {
   return articles
-    .filter(a => a.status === 'published' && !a.revision && new Date(a.updated_at) < REWRITE_START && (failures[a.id] ?? 0) < MAX_FAILURES)
+    .filter(a =>
+      a.status === 'published' &&
+      !a.rewritten &&
+      !a.revision &&
+      !a.rewrite_reviewed_at &&
+      (failures[a.id] ?? 0) < MAX_FAILURES)
     .sort((a, b) => (b.views - a.views) || (new Date(a.published_at) - new Date(b.published_at)));
 }
 
@@ -45,13 +74,13 @@ function writeStatus(active, pending) {
   writeJson(STATUS_FILE, { rewriteActive: active, pending, updatedAt: new Date().toISOString() });
 }
 
-/** True while the rewrite pass is running (new articles must wait). */
-function rewriteInProgress(now = new Date()) {
-  if (now < REWRITE_START) return false;
+/** True while articles are still waiting to be rewritten (new articles must wait). */
+function rewriteInProgress() {
   return readJson(STATUS_FILE, { rewriteActive: false }).rewriteActive === true;
 }
 
 module.exports = {
-  REWRITE_START, REWRITE_PER_RUN, MAX_FAILURES,
+  REWRITE_PER_DAY, MAX_FAILURES,
   readFailures, writeFailures, pendingRewrites, writeStatus, rewriteInProgress,
+  remainingToday, consumeQuota,
 };

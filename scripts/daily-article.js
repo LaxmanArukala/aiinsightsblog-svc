@@ -551,18 +551,26 @@ async function main() {
   const corpus = quality.buildCorpus(existingArticles);
   log(`Existing articles: ${existingTitles.size}`);
 
-  // One-off pass: rewrite every existing article through the quality gate before
-  // any new article is written. Resumes normal generation once nothing is pending.
-  if (new Date() >= rewrite.REWRITE_START) {
+  // Rewrite every existing article through the quality gate before any new article is
+  // written. Capped at REWRITE_PER_DAY across all of the day's runs, because each
+  // rewrite waits for a human decision in the admin approval tab.
+  {
     const failures = rewrite.readFailures();
     const pending  = rewrite.pendingRewrites(existingArticles, failures);
     rewrite.writeStatus(pending.length > 0, pending.length);
     if (pending.length > 0) {
+      const quota = rewrite.remainingToday();
       log(`Rewrite mode: ${pending.length} article(s) still to rewrite; new articles are paused.`);
-      await rewriteBatch(pending.slice(0, rewrite.REWRITE_PER_RUN), existingArticles, failures, provider);
+      if (quota === 0) {
+        log(`Daily quota of ${rewrite.REWRITE_PER_DAY} already used; nothing more today.`);
+        return;
+      }
+      log(`Daily quota: ${quota} of ${rewrite.REWRITE_PER_DAY} left for today.`);
+      const submitted = await rewriteBatch(pending.slice(0, quota), existingArticles, failures, provider);
+      rewrite.consumeQuota(submitted);
       const left = rewrite.pendingRewrites(existingArticles, rewrite.readFailures()).length;
       rewrite.writeStatus(left > 0, left);
-      log(`=== Rewrite run done — ${left} article(s) remaining ===`);
+      log(`=== Rewrite run done — ${submitted} sent for approval, ${left} article(s) remaining ===`);
       return;
     }
     log('Rewrite pass complete; generating new articles.');
@@ -592,7 +600,9 @@ async function main() {
 
 // Rewrites a batch of existing articles. Each rewrite that clears the quality gate is stored
 // as a pending revision for admin approval; the live article is never touched here.
+// Returns how many rewrites were actually submitted (what the daily quota is charged for).
 async function rewriteBatch(batch, allArticles, failures, provider) {
+  let submitted = 0;
   const batchIds = new Set(batch.map(a => a.id));
   // Exclude the batch itself so an article is not scored as a duplicate of its old text.
   const corpus = quality.buildCorpus(allArticles.filter(a => !batchIds.has(a.id)));
@@ -637,6 +647,7 @@ async function rewriteBatch(batch, allArticles, failures, provider) {
       }
       old.revision = { content: article.content };
       quality.addToCorpus(corpus, { title: old.title, content: article.content });
+      submitted++;
       log(`✓ Rewrite saved for approval.`);
     } catch (err) {
       failures[old.id] = (failures[old.id] ?? 0) + 1;
@@ -644,6 +655,7 @@ async function rewriteBatch(batch, allArticles, failures, provider) {
       log(`ERROR rewriting: ${err.message}`);
     }
   }
+  return submitted;
 }
 
 // Returns the published title (lowercased) on success, null on failure

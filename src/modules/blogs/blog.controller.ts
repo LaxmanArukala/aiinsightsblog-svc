@@ -16,6 +16,7 @@ export async function getBlogs(req: Request, res: Response): Promise<void> {
       category_name: req.query.category_name as string | undefined,
       status: req.query.status as BlogListQuery['status'] | undefined,
       review: req.query.review === 'true',
+      rewritten: req.query.rewritten === undefined ? undefined : req.query.rewritten === 'true',
     };
     const result = await blogService.getBlogs(query);
     res.json(successResponse(result, 'Blogs fetched successfully'));
