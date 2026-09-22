@@ -32,7 +32,7 @@ export async function getTestimonials(query: TestimonialListQuery): Promise<Pagi
 
   const dataResult = await pool.query<Testimonial>(
     `SELECT * FROM testimonials ${where}
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id ASC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );

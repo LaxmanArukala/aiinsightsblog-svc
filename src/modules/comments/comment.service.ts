@@ -20,7 +20,7 @@ export async function getCommentsByBlogId(
 
   const [rows, count] = await Promise.all([
     pool.query<Comment>(
-      `SELECT * FROM comments WHERE ${where} ORDER BY created_at DESC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
+      `SELECT * FROM comments WHERE ${where} ORDER BY created_at DESC, comment_id ASC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
       values,
     ),
     pool.query<{ count: string }>(
@@ -50,7 +50,7 @@ export async function getAllComments(
 
   const [rows, count] = await Promise.all([
     pool.query<Comment>(
-      `SELECT * FROM comments ${where} ORDER BY created_at DESC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
+      `SELECT * FROM comments ${where} ORDER BY created_at DESC, comment_id ASC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
       values,
     ),
     pool.query<{ count: string }>(

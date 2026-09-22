@@ -28,7 +28,7 @@ export async function getSubscribers(query: SubscriberListQuery): Promise<Pagina
   params.push(limit, offset);
 
   const dataResult = await pool.query<Subscriber>(
-    `SELECT * FROM subscribers ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    `SELECT * FROM subscribers ${where} ORDER BY created_at DESC, id ASC LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
 

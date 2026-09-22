@@ -16,7 +16,7 @@ export async function getCategories(query: CategoryListQuery): Promise<Paginated
   const total       = Number.parseInt(countResult.rows[0].count, 10);
 
   const dataResult  = await pool.query<Category>(
-    'SELECT * FROM categories ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+    'SELECT * FROM categories ORDER BY created_at DESC, id ASC LIMIT $1 OFFSET $2',
     [limit, offset]
   );
 

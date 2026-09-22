@@ -23,7 +23,7 @@ export async function getAuthors(query: AuthorListQuery): Promise<PaginatedAutho
 
   const dataResult = await pool.query<Author>(
     `SELECT * FROM authors ${where}
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id ASC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );

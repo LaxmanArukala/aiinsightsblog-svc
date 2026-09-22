@@ -1,13 +1,19 @@
 import pool from '../../lib/db';
 import { Blog, BlogListQuery, BlogRevision, CreateBlogDto, PaginatedResponse, UpsertBlogDto } from './blog.types';
 
+/*
+ * Every sort ends with the primary key. Without a unique tiebreaker Postgres may
+ * order rows with equal published_at/views/rating differently between queries, so
+ * a paginated sweep can return one row twice and skip another — which silently
+ * dropped an article from the sitemap and from /blogs paging.
+ */
 const SORT_MAP: Record<string, string> = {
-  latest:      'published_at DESC',
-  oldest:      'published_at ASC',
-  most_liked:  'likes DESC',
-  most_viewed: 'views DESC',
-  top_rated:   'rating DESC',
-  trending:    'trending DESC, views DESC',
+  latest:      'published_at DESC, id ASC',
+  oldest:      'published_at ASC, id ASC',
+  most_liked:  'likes DESC, id ASC',
+  most_viewed: 'views DESC, id ASC',
+  top_rated:   'rating DESC, id ASC',
+  trending:    'trending DESC, views DESC, id ASC',
 };
 
 export async function getBlogs(query: BlogListQuery): Promise<PaginatedResponse<Blog>> {
@@ -75,7 +81,7 @@ export async function getRelatedBlogs(categoryId: string, limit: number): Promis
   const result = await pool.query<Blog>(
     `SELECT * FROM blogs
      WHERE category->>'id' = $1 AND status = 'published'
-     ORDER BY published_at DESC
+     ORDER BY published_at DESC, id ASC
      LIMIT $2`,
     [categoryId, limit]
   );

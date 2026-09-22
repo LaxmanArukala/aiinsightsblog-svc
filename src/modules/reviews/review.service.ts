@@ -1,6 +1,29 @@
 import pool from '../../lib/db';
 import type { CreateReviewDto, Review, ReviewQueryParams, UpdateReviewDto } from './review.types';
 
+/**
+ * Recompute a blog's star rating and review count from its APPROVED reviews.
+ *
+ * Reviews arrive as 'pending', so only approved ones may move the public rating —
+ * otherwise an unmoderated review would change the stars the moment it is posted.
+ * Called after every create, update (which covers approve/reject) and delete;
+ * previously nothing maintained these columns, so they sat at 0 forever.
+ * blogs.rating is NUMERIC(3,2), hence the rounding.
+ */
+async function recalcBlogRating(blogId: string): Promise<void> {
+  await pool.query(
+    `UPDATE blogs SET
+       rating = COALESCE((
+         SELECT ROUND(AVG(rating)::numeric, 2) FROM reviews WHERE blog_id = $1 AND status = 'approved'
+       ), 0),
+       review_count = (
+         SELECT COUNT(*) FROM reviews WHERE blog_id = $1 AND status = 'approved'
+       )
+     WHERE id = $1`,
+    [blogId],
+  );
+}
+
 export async function getReviewsByBlogId(
   blogId: string,
   params: ReviewQueryParams,
@@ -23,7 +46,7 @@ export async function getReviewsByBlogId(
 
   const [rows, count] = await Promise.all([
     pool.query<Review>(
-      `SELECT * FROM reviews WHERE ${where} ORDER BY created_at DESC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
+      `SELECT * FROM reviews WHERE ${where} ORDER BY created_at DESC, review_id ASC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
       values,
     ),
     pool.query<{ count: string }>(
@@ -56,7 +79,7 @@ export async function getAllReviews(
 
   const [rows, count] = await Promise.all([
     pool.query<Review>(
-      `SELECT * FROM reviews ${where} ORDER BY created_at DESC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
+      `SELECT * FROM reviews ${where} ORDER BY created_at DESC, review_id ASC LIMIT $${values.push(limit)} OFFSET $${values.push(offset)}`,
       values,
     ),
     pool.query<{ count: string }>(
@@ -83,6 +106,7 @@ export async function createReview(blogId: string, dto: CreateReviewDto): Promis
      RETURNING *`,
     [blogId, dto.name, dto.email, dto.rating, dto.review_text],
   );
+  await recalcBlogRating(blogId);
   return result.rows[0];
 }
 
@@ -111,6 +135,8 @@ export async function updateReview(
      RETURNING *`,
     values,
   );
+  // Covers approve and reject, which change whether this review counts, and rating edits.
+  if (result.rows[0]) await recalcBlogRating(blogId);
   return result.rows[0] ?? null;
 }
 
@@ -119,5 +145,7 @@ export async function deleteReview(reviewId: string, blogId: string): Promise<bo
     'DELETE FROM reviews WHERE review_id = $1 AND blog_id = $2',
     [reviewId, blogId],
   );
-  return (result.rowCount ?? 0) > 0;
+  const deleted = (result.rowCount ?? 0) > 0;
+  if (deleted) await recalcBlogRating(blogId);
+  return deleted;
 }
