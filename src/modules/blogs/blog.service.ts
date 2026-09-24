@@ -36,8 +36,17 @@ export async function getBlogs(query: BlogListQuery): Promise<PaginatedResponse<
   }
 
   if (query.category) {
+    /*
+     * Match the stored slug, or the category NAME slugified the same way the
+     * clients derive it. 24 articles carry a category object with no slug at all
+     * ("Jobs & Resumes", and a few others), so a slug-only filter hid them
+     * entirely and their category tab came back empty.
+     */
     params.push(query.category);
-    conditions.push(`category->>'slug' = $${params.length}`);
+    conditions.push(
+      `(category->>'slug' = $${params.length}
+        OR trim(both '-' from lower(regexp_replace(category->>'name', '[^a-zA-Z0-9]+', '-', 'g'))) = $${params.length})`,
+    );
   }
 
   if (query.category_name) {
