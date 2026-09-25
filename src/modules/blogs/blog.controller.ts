@@ -179,3 +179,23 @@ export async function rejectBlog(req: Request, res: Response): Promise<void> {
     res.status(500).json(errorResponse('Failed to reject blog', [(err as Error).message]));
   }
 }
+
+export async function mergeBlog(req: Request, res: Response): Promise<void> {
+  try {
+    const blog = await blogService.setMerged(req.params.id, true);
+    if (!blog) { res.status(404).json(errorResponse('No published blog with that id')); return; }
+    res.json(successResponse(blog, 'Blog withdrawn as a merged duplicate'));
+  } catch (err) {
+    res.status(500).json(errorResponse('Failed to merge blog', [(err as Error).message]));
+  }
+}
+
+export async function unmergeBlog(req: Request, res: Response): Promise<void> {
+  try {
+    const blog = await blogService.setMerged(req.params.id, false);
+    if (!blog) { res.status(404).json(errorResponse('No merged blog with that id')); return; }
+    res.json(successResponse(blog, 'Blog restored to the archive'));
+  } catch (err) {
+    res.status(500).json(errorResponse('Failed to restore blog', [(err as Error).message]));
+  }
+}

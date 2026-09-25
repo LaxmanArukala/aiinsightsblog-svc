@@ -228,3 +228,21 @@ export async function rejectBlog(id: string): Promise<Blog | null> {
   );
   return result.rows[0] ?? null;
 }
+
+/**
+ * Withdraw a duplicate from the archive without destroying it.
+ *
+ * Deleting was not an option: POST /blogs mints a new id, so a restored article
+ * would come back at a different URL. A status change keeps the row, its id and
+ * its stats intact, drops it out of every published listing and the sitemap, and
+ * reverses with one call. The web app 308s the URL to the copy that was kept.
+ */
+export async function setMerged(id: string, merged: boolean): Promise<Blog | null> {
+  const result = await pool.query<Blog>(
+    `UPDATE blogs SET status = $2, updated_at = NOW()
+     WHERE id = $1 AND status = $3
+     RETURNING *`,
+    [id, merged ? 'merged' : 'published', merged ? 'published' : 'merged'],
+  );
+  return result.rows[0] ?? null;
+}

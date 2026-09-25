@@ -20,6 +20,10 @@ router.put('/:id/revision', blogController.submitRevision);
 router.post('/:id/approve', blogController.approveBlog);
 router.post('/:id/reject', blogController.rejectBlog);
 
+// Duplicate consolidation: withdraw / restore, reversible either way
+router.post('/:id/merge', blogController.mergeBlog);
+router.post('/:id/unmerge', blogController.unmergeBlog);
+
 // Nested: /api/v1/blogs/:blogId/reviews
 router.use('/:blogId/reviews', reviewRoutes);
 

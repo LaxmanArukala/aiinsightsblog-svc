@@ -11,7 +11,7 @@ export interface Author {
   bio?: string;
 }
 
-export type BlogStatus = 'published' | 'pending_review' | 'rejected';
+export type BlogStatus = 'published' | 'pending_review' | 'rejected' | 'merged';
 
 /** Written by the article cron; shown to the reviewer in the admin. */
 export interface QualityScores {
