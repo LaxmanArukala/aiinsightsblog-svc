@@ -671,6 +671,14 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
 
   let topic = null;
   for (const candidate of shuffle(unused)) {
+    // Cheapest check first: if the archive already covers this subject, no amount of
+    // rewording makes it a new article, and the gate would burn three generations
+    // discovering that. 358 redundant articles reached the archive before this existed.
+    const dup = quality.nearestTitle(candidate, corpus);
+    if (dup.score >= quality.DUPLICATE_TITLE) {
+      log(`⚠ "${candidate}" is the same subject as "${dup.title}" (${dup.score}), trying another topic.`);
+      continue;
+    }
     const { covered, match } = await isTopicAlreadyCovered(candidate, rssTitles);
     if (covered) {
       log(`⚠ "${candidate}" already covered externally (matches "${match}"), trying another topic.`);

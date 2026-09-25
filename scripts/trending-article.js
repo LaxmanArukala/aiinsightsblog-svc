@@ -421,6 +421,14 @@ async function main() {
 
     let topic = null;
     for (const candidate of shuffle(unused)) {
+      // Cheapest check first: if the archive already covers this subject, rewording
+      // it does not make a new article, and the gate would spend three generations
+      // discovering that.
+      const dup = quality.nearestTitle(candidate, corpus);
+      if (dup.score >= quality.DUPLICATE_TITLE) {
+        log(`⚠ "${candidate}" is the same subject as "${dup.title}" (${dup.score}), trying another topic.`);
+        continue;
+      }
       const { covered, match } = await isTopicAlreadyCovered(candidate, rssTitles);
       if (covered) {
         log(`⚠ "${candidate}" already covered externally (matches "${match}"), trying another topic.`);
