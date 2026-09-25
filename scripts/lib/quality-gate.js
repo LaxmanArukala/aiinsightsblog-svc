@@ -26,6 +26,11 @@ const http  = require('node:http');
 
 const MIN_SCORE = Number(process.env.QUALITY_MIN_SCORE) || 85;
 
+/** Host used to tell an internal link from a citation. */
+const SITE_HOST = 'aiinsightsblogs.com';
+/** Every article must link into the rest of the archive; nothing did before this. */
+const MIN_INTERNAL_LINKS = Number(process.env.MIN_INTERNAL_LINKS) || 2;
+
 const STOP = new Set(['a', 'an', 'and', 'the', 'of', 'in', 'on', 'for', 'to', 'with', 'from', 'by', 'at', 'is', 'are',
   'how', 'what', 'why', 'vs', 'versus', 'using', 'your', 'you', 'that', 'this', 'it', 'its', 'as', 'or']);
 
@@ -237,7 +242,21 @@ function scoreSeo(a, topic) {
   add(faqH3 >= 3, 8, 'End with <h2>Frequently Asked Questions</h2> containing at least 3 <h3> questions.', faqIdx >= 0 ? 4 : 0);
 
   add(wc >= 1500, 10, `Article needs at least 1500 words (now ${wc}).`, (wc / 1500) * 10);
-  add(/<a\s[^>]*href="https?:\/\//i.test(html), 5, 'Cite at least one real external source as an <a href="https://..."> link.');
+
+  /*
+   * Links are counted after stripBrokenLinks has run, so anything still here
+   * resolved. Internal ones are separated from citations because they do
+   * different jobs and both were missing: across the kept archive every single
+   * article had zero internal links and 80% had no citation at all. The old
+   * check was one 5-point deduction, which a 95 still cleared, so the prompt's
+   * "cite a source" instruction was effectively optional.
+   */
+  const hrefs = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/gi)].map(m => m[1]);
+  const internalLinks = hrefs.filter(h => /\/blogs\//.test(h) && (h.startsWith('/') || h.includes(SITE_HOST)));
+  const externalLinks = hrefs.filter(h => /^https?:\/\//i.test(h) && !h.includes(SITE_HOST));
+  add(externalLinks.length >= 1, 5, 'Cite at least one real external source as an <a href="https://..."> link.');
+  add(internalLinks.length >= MIN_INTERNAL_LINKS, 5,
+    `Link to at least ${MIN_INTERNAL_LINKS} related articles on this site (have ${internalLinks.length}).`);
   add((a.tags ?? []).length >= 8, 4, 'Provide at least 8 tags.');
   add((html.match(/<h1[\s>]/gi) ?? []).length <= 1, 4, 'Use at most one <h1>.');
   const paras = (html.match(/<p[\s>][\s\S]*?<\/p>/gi) ?? []).map(p => words(plainText(p)).length);
@@ -245,7 +264,18 @@ function scoreSeo(a, topic) {
   add(avgPara > 0 && avgPara <= 100, 4, `Keep paragraphs short (avg ${Math.round(avgPara)} words).`);
   add(/<(ul|ol)[\s>]/i.test(html), 5, 'Include at least one bulleted or numbered list.');
 
-  return { score: pct(clamp(pts)), issues, wordCount: wc, keyword: kw.join(' '), densityPct: +density.toFixed(2) };
+  // Both are requirements, not preferences: cap well under MIN_SCORE so a missing
+  // link cannot be outscored by the rest of the article.
+  let score = clamp(pts);
+  if (externalLinks.length < 1) score = Math.min(score, 70);
+  if (internalLinks.length < MIN_INTERNAL_LINKS) score = Math.min(score, 70);
+
+  return {
+    score: pct(score), issues, wordCount: wc, keyword: kw.join(' '),
+    densityPct: +density.toFixed(2),
+    internalLinks: internalLinks.length,
+    externalLinks: externalLinks.length,
+  };
 }
 
 function scoreOverall(a) {
@@ -375,6 +405,8 @@ const fmt = (r) => Object.entries(r.scores).map(([k, v]) => `${k}=${v}`).join(' 
 const QUALITY_RULES = `
 QUALITY BAR (every article is auto-scored; anything under ${MIN_SCORE}/100 on any metric is rejected and rewritten):
 - ACTIVE VOICE ONLY: write "The model reads the prompt", never "The prompt is read by the model". Avoid "is/are/was/were/been + past participle" everywhere.
+- INTERNAL LINKS: link to at least ${MIN_INTERNAL_LINKS} of the related articles supplied with the brief, using their exact URLs, in sentences where they genuinely belong. Never invent a URL on this site.
+- CITE A SOURCE: include at least one <a href="https://..."> link to a real, reachable external page. Unreachable links are stripped before scoring, so a made-up URL counts as none.
 - HUMAN TONE: plain words, concrete specifics (numbers, versions, tool and company names), varied sentence length with some very short sentences. No hype or filler.
 - BANNED PHRASES: delve, dive into, unlock, unleash, revolutionize, game-changer, cutting-edge, seamless, landscape, realm, tapestry, "in today's", "it's important to note", "in conclusion", furthermore, moreover, harness the power, embark, elevate, transformative, groundbreaking, paradigm shift. Do not use em dashes.
 - ORIGINAL: give a specific angle, fresh examples and your own structure. The title must not start with a formula such as "Unlocking the Power of" or "The AI Revolution".

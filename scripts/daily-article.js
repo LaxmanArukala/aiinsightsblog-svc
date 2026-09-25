@@ -22,6 +22,7 @@ const quality = require('./lib/quality-gate');
 const rewrite = require('./lib/rewrite-state');
 
 const API_BASE      = 'http://localhost:8000/api/v1';
+const SITE_URL      = process.env.SITE_URL || 'https://aiinsightsblogs.com';
 const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
 
 // ── Provider config ───────────────────────────────────────────────────────────
@@ -319,6 +320,31 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
 
+/**
+ * Real articles the model may link to, closest in subject first.
+ *
+ * Without a supplied list the model invents internal URLs, which 404 and get
+ * stripped before scoring — so the article fails the internal-link requirement
+ * with nothing to show for the attempt. Merged duplicates are excluded: their
+ * URLs only redirect now.
+ */
+function relatedArticles(topic, articles, limit = 8) {
+  const STOP = new Set(['a','an','the','of','in','on','for','to','with','from','by','at','is','are','and','how','what','why','your','you','it','that','this']);
+  const tok = (t) => new Set((t.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => !STOP.has(w)));
+  const want = tok(topic);
+  return articles
+    .filter(a => a.status === 'published' && a.slug)
+    .map(a => {
+      const have = tok(a.title);
+      const inter = [...want].filter(w => have.has(w)).length;
+      return { a, score: inter / (want.size || 1) };
+    })
+    .filter(x => x.score > 0)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, limit)
+    .map(x => ({ title: x.a.title, url: `${SITE_URL}/blogs/${x.a.id}-${x.a.slug}` }));
+}
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ── AI API caller (OpenAI-compatible) ─────────────────────────────────────────
@@ -438,11 +464,15 @@ ${quality.QUALITY_RULES}
 
 OUTPUT: Return raw JSON only. No code fences. No markdown wrapper. No explanation.`;
 
-async function generateArticle(shift, topic, notes = []) {
+async function generateArticle(shift, topic, notes = [], related = []) {
   const retryNotes = notes.length
     ? `\n\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE QUALITY CHECK. Fix all of the following:\n${notes.map(n => `- ${n}`).join('\n')}\n`
     : '';
-  const userPrompt = `Write a complete, publish-ready article about: "${topic}".${retryNotes}
+  const relatedBlock = related.length
+    ? `\n\nRELATED ARTICLES ON THIS SITE — link to at least 2 of these, using the exact URL, where the sentence genuinely calls for it. Do not invent any other URL on this domain:\n${related.map(r => `- "${r.title}" — ${r.url}`).join('\n')}\n`
+    : '';
+
+  const userPrompt = `Write a complete, publish-ready article about: "${topic}".${retryNotes}${relatedBlock}
 
 Return ONLY a valid JSON object with these exact fields:
 - "title": SEO-friendly blog title that contains the primary keyword (string)
@@ -591,7 +621,7 @@ async function main() {
       log(`Waiting ${provider.delayMs / 1000}s for ${provider.provider} rate limit...`);
       await sleep(provider.delayMs);
     }
-    const result = await publishArticleForCategory(catSlugs[i], existingTitles, provider, rssTitles, corpus);
+    const result = await publishArticleForCategory(catSlugs[i], existingTitles, provider, rssTitles, corpus, existingArticles);
     if (result) { existingTitles.add(result); published++; }
   }
 
@@ -615,7 +645,9 @@ async function rewriteBatch(batch, allArticles, failures, provider) {
     try {
       const passed = await quality.generateUntilPasses({
         generate: async (notes) => {
-          const a = await generateArticle(provider, old.title, notes);
+          // A rewrite must not link to itself, so the article being rewritten is excluded.
+          const related = relatedArticles(old.title, allArticles.filter(x => x.id !== old.id));
+          const a = await generateArticle(provider, old.title, notes, related);
           a.title = old.title;
           a.slug  = old.slug;
           return a;
@@ -659,7 +691,7 @@ async function rewriteBatch(batch, allArticles, failures, provider) {
 }
 
 // Returns the published title (lowercased) on success, null on failure
-async function publishArticleForCategory(catSlug, existingTitles, provider, rssTitles, corpus) {
+async function publishArticleForCategory(catSlug, existingTitles, provider, rssTitles, corpus, existingArticles) {
   const category = CATEGORIES[catSlug];
   log(`\n── Category: ${category.name} ──`);
 
@@ -697,7 +729,7 @@ async function publishArticleForCategory(catSlug, existingTitles, provider, rssT
   let qualityScores;
   try {
     const passed = await quality.generateUntilPasses({
-      generate: (notes) => generateArticle(provider, topic, notes),
+      generate: (notes) => generateArticle(provider, topic, notes, relatedArticles(topic, existingArticles)),
       topic, corpus, log, sleep, delayMs: provider.delayMs,
     });
     if (!passed) {

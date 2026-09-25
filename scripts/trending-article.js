@@ -22,6 +22,7 @@ const quality = require('./lib/quality-gate');
 const rewrite = require('./lib/rewrite-state');
 
 const API_BASE   = 'http://localhost:8000/api/v1';
+const SITE_URL   = process.env.SITE_URL || 'https://aiinsightsblogs.com';
 const DEFAULT_THUMBNAIL = '/assets/blog-images/default-thumbnail.png';
 
 const PROVIDER = {
@@ -210,6 +211,24 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
 
+/** Real articles the model may link to — see the matching helper in daily-article.js. */
+function relatedArticles(topic, articles, limit = 8) {
+  const STOP = new Set(['a','an','the','of','in','on','for','to','with','from','by','at','is','are','and','how','what','why','your','you','it','that','this']);
+  const tok = (t) => new Set((t.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => !STOP.has(w)));
+  const want = tok(topic);
+  return articles
+    .filter(a => a.status === 'published' && a.slug)
+    .map(a => {
+      const have = tok(a.title);
+      const inter = [...want].filter(w => have.has(w)).length;
+      return { a, score: inter / (want.size || 1) };
+    })
+    .filter(x => x.score > 0)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, limit)
+    .map(x => ({ title: x.a.title, url: `${SITE_URL}/blogs/${x.a.id}-${x.a.slug}` }));
+}
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ── AI caller ─────────────────────────────────────────────────────────────────
@@ -291,11 +310,15 @@ function extractJSON(text) {
   throw new Error(`Could not extract JSON: ${text.slice(0, 300)}`);
 }
 
-async function generateArticle(topic, notes = []) {
+async function generateArticle(topic, notes = [], related = []) {
   const retryNotes = notes.length
     ? `\n\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE QUALITY CHECK. Fix all of the following:\n${notes.map(n => `- ${n}`).join('\n')}\n`
     : '';
-  const prompt = `Write an engaging, reader-friendly blog post about: "${topic}".${retryNotes}
+  const relatedBlock = related.length
+    ? `\n\nRELATED ARTICLES ON THIS SITE — link to at least 2 of these, using the exact URL, where the sentence genuinely calls for it. Do not invent any other URL on this domain:\n${related.map(r => `- "${r.title}" — ${r.url}`).join('\n')}\n`
+    : '';
+
+  const prompt = `Write an engaging, reader-friendly blog post about: "${topic}".${retryNotes}${relatedBlock}
 
 This article is for a general audience curious about AI trends — not just developers. Write like a journalist or tech writer explaining complex ideas simply.
 
@@ -357,7 +380,8 @@ async function fetchExistingArticles() {
     const res   = await httpGet(`${API_BASE}/blogs?limit=100&page=${page}&status=all`);
     const blogs = res.data?.data ?? [];
     if (blogs.length === 0) break;
-    all.push(...blogs.map(b => ({ title: b.title, content: b.content })));
+    // Whole rows: relatedArticles needs id, slug and status to build link candidates.
+    all.push(...blogs);
     if (blogs.length < 100) break;
     page++;
   }
@@ -447,7 +471,7 @@ async function main() {
     let qualityScores;
     try {
       const passed = await quality.generateUntilPasses({
-        generate: (notes) => generateArticle(topic, notes),
+        generate: (notes) => generateArticle(topic, notes, relatedArticles(topic, existingArticles)),
         topic, corpus, log, sleep, delayMs: 40000,
       });
       if (!passed) {
